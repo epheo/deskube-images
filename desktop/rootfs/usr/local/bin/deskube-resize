@@ -1,0 +1,30 @@
+#!/bin/sh
+# Sets the headless output to the size and refresh rate the Moonlight
+# client asked for. Sunshine runs it as a prep command with
+# SUNSHINE_CLIENT_WIDTH, _HEIGHT, and _FPS set. "reset" restores the
+# default. Always exits 0: a failed prep command would abort the session.
+OUT=${DESKUBE_OUTPUT:-HEADLESS-1}
+DEFAULT=${DESKUBE_DEFAULT_MODE:-1920x1080@60}
+LOG=${DESKUBE_RESIZE_LOG:-$HOME/.cache/deskube-resize.log}
+mkdir -p "$(dirname "$LOG")" 2>/dev/null
+log() { echo "$(date +%FT%T) $*" | tee -a "$LOG"; }
+# sway only exports its socket to its own children, Sunshine is not one.
+: "${SWAYSOCK:=$(ls "${XDG_RUNTIME_DIR:-/tmp/run-$(id -u)}"/sway-ipc.*.sock 2>/dev/null | head -1)}"
+export SWAYSOCK
+
+if [ "${1:-}" = reset ]; then
+  SIZE=${DEFAULT%@*}; W=${SIZE%x*}; H=${SIZE#*x}; HZ=${DEFAULT#*@}; WHY=reset
+else
+  W=${1:-${SUNSHINE_CLIENT_WIDTH:-}}; H=${2:-${SUNSHINE_CLIENT_HEIGHT:-}}; HZ=${3:-${SUNSHINE_CLIENT_FPS:-60}}
+  WHY="client asked ${W}x${H} at ${HZ} fps"
+fi
+for v in "$W" "$H" "$HZ"; do
+  case "$v" in ''|*[!0-9]*) log "incomplete request (W='$W' H='$H' HZ='$HZ')"; exit 0;; esac
+done
+
+if swaymsg output "$OUT" mode "${W}x${H}@${HZ}Hz" >/dev/null 2>&1; then
+  log "set ${W}x${H}@${HZ} on $OUT ($WHY)"
+else
+  log "cannot set ${W}x${H}@${HZ} on $OUT ($WHY)"
+fi
+exit 0

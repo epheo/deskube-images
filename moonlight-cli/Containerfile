@@ -1,0 +1,27 @@
+ARG FEDORA=latest
+FROM registry.fedoraproject.org/fedora:${FEDORA} AS build
+# ffmpeg and SDL are only there because the build refuses to configure
+# without a software decoder; the tests use the fake platform.
+RUN dnf -y install git cmake gcc gcc-c++ make pkgconf-pkg-config \
+      opus-devel expat-devel alsa-lib-devel systemd-devel avahi-devel libcurl-devel \
+      libevdev-devel pulseaudio-libs-devel libuuid-devel enet-devel openssl-devel \
+      ffmpeg-free-devel sdl2-compat-devel \
+    && dnf clean all
+COPY count.c /tmp/count.c
+# The fake platform gets a decoder that counts frames; every .c under
+# src/ is compiled in. The grep fails the build if upstream moved.
+RUN git clone --depth 1 --recursive https://github.com/moonlight-stream/moonlight-embedded.git /src \
+ && cp /tmp/count.c /src/src/count.c \
+ && echo 'extern DECODER_RENDERER_CALLBACKS decoder_callbacks_count;' >> /src/src/video/video.h \
+ && sed -i '/^DECODER_RENDERER_CALLBACKS\* platform_get_video/,/switch (system) {/ s/switch (system) {/switch (system) {\n  case FAKE:\n    return \&decoder_callbacks_count;/' /src/src/platform.c \
+ && grep -q decoder_callbacks_count /src/src/platform.c \
+ && cmake -S /src -B /build -DCMAKE_BUILD_TYPE=Release -DENABLE_CEC=OFF -DENABLE_PI=OFF -DENABLE_AML=OFF -DENABLE_RK=OFF \
+ && cmake --build /build -j"$(nproc)" && cmake --install /build --prefix /opt/moonlight
+
+FROM registry.fedoraproject.org/fedora:${FEDORA}
+RUN dnf -y install opus expat alsa-lib systemd-libs avahi-libs libcurl libevdev \
+      pulseaudio-libs libuuid enet openssl-libs libavcodec-free libavutil-free sdl2-compat coreutils \
+    && dnf clean all
+COPY --from=build /opt/moonlight /opt/moonlight
+ENV PATH=/opt/moonlight/bin:$PATH LD_LIBRARY_PATH=/opt/moonlight/lib:/opt/moonlight/lib64 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy
+ENTRYPOINT ["moonlight"]

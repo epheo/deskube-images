@@ -1,0 +1,126 @@
+#!/bin/sh
+# Session for a container desktop: bus, audio, compositor, Sunshine.
+# No systemd and no logind here, so everything is started by hand.
+set -u
+# OpenShift runs the image under a UID of its choosing, one /etc/passwd
+# does not know. Programs that look their user up then fail, so the
+# entry of the image's user is moved to that UID.
+if ! whoami > /dev/null 2>&1 && [ -w /etc/passwd ]; then
+  { grep -v '^desk:' /etc/passwd; echo "desk:x:$(id -u):$(id -g)::$HOME:/bin/bash"; } > /tmp/passwd
+  cat /tmp/passwd > /etc/passwd; rm -f /tmp/passwd
+fi
+export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/tmp/run-$(id -u)}
+mkdir -p "$XDG_RUNTIME_DIR" && chmod 700 "$XDG_RUNTIME_DIR"
+if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]; then
+  exec dbus-run-session -- "$0" "$@"
+fi
+
+PORT=${DESKUBE_PORT:-47989}
+NAME=${DESKUBE_NAME:-$(uname -n)}
+RENDER=${DESKUBE_RENDER_NODE:-/dev/dri/renderD128}
+CONF_DIR=$HOME/.config/sunshine
+mkdir -p "$CONF_DIR"
+
+pipewire &
+sleep 1
+wireplumber &
+pipewire-pulse &
+
+# wlroots headless backend: no seat, no KMS. With a render node the
+# GPU draws and encodes; without one the CPU does both. Sunshine's wlr
+# capture only takes GPU buffers, so the CPU path goes through the
+# screen cast portal, which hands over plain memory.
+export WLR_BACKENDS=headless WLR_LIBINPUT_NO_DEVICES=1
+if [ -e "$RENDER" ]; then
+  export WLR_RENDER_DRM_DEVICE=$RENDER
+  ENCODER=${DESKUBE_ENCODER:-vaapi}
+  CAPTURE=${DESKUBE_CAPTURE:-wlr}
+else
+  export WLR_RENDERER=pixman
+  ENCODER=${DESKUBE_ENCODER:-software}
+  CAPTURE=${DESKUBE_CAPTURE:-portal}
+fi
+export XDG_CURRENT_DESKTOP=sway XDG_SESSION_TYPE=wayland
+sway -c /etc/deskube/sway.config > "$XDG_RUNTIME_DIR/sway.log" 2>&1 &
+SWAY_PID=$!
+for _ in $(seq 1 50); do
+  WL=$(ls "$XDG_RUNTIME_DIR" 2>/dev/null | grep -E '^wayland-[0-9]+$' | head -1)
+  [ -n "$WL" ] && break
+  sleep 0.2
+done
+[ -n "${WL:-}" ] || { echo "compositor did not start"; cat "$XDG_RUNTIME_DIR/sway.log"; exit 1; }
+export WAYLAND_DISPLAY=$WL
+# sway only exports its socket to its own children; deskube-resize needs it.
+SWAYSOCK=$(ls "$XDG_RUNTIME_DIR"/sway-ipc.*.sock 2>/dev/null | head -1)
+export SWAYSOCK
+# The portal is started by the bus, which came up before the compositor
+# and knows nothing of its socket.
+dbus-update-activation-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE SWAYSOCK
+
+# Sunshine rejects web UI writes from origins it does not know, and by
+# default it only knows localhost. Allow this desktop's own addresses,
+# plus whatever the launcher adds (a NodePort or load balancer address).
+WEB=$((PORT + 1))
+ORIGINS="https://localhost:$WEB,https://127.0.0.1:$WEB,https://$(uname -n):$WEB"
+for ip in $(ip -4 -o addr show scope global 2>/dev/null | awk '{print $4}' | cut -d/ -f1); do
+  ORIGINS="$ORIGINS,https://$ip:$WEB"
+done
+# In a pod the client browses to the node, an address no interface here has.
+[ -n "${DESKUBE_HOST_IP:-}" ] && ORIGINS="$ORIGINS,https://$DESKUBE_HOST_IP:$WEB"
+[ -n "${DESKUBE_WEB_ORIGINS:-}" ] && ORIGINS="$ORIGINS,$DESKUBE_WEB_ORIGINS"
+
+# The image owns the app list. Sunshine's stock one adds "Low Res Desktop"
+# and "Steam Big Picture", whose prep commands abort the launch here.
+cp /etc/deskube/apps.json "$CONF_DIR/apps.json"
+
+cat > "$CONF_DIR/sunshine.conf" <<CONF
+sunshine_name = $NAME
+file_apps = $CONF_DIR/apps.json
+port = $PORT
+address_family = ipv4
+origin_web_ui_allowed = wan
+csrf_allowed_origins = $ORIGINS
+capture = $CAPTURE
+encoder = $ENCODER
+adapter_name = $RENDER
+gamepad = ${DESKUBE_GAMEPAD:-xone}
+global_prep_cmd = [{"do":"sh -c \"deskube-resize || true\"","undo":"sh -c \"deskube-resize reset || true\""}]
+min_log_level = ${DESKUBE_LOG_LEVEL:-info}
+file_state = $CONF_DIR/sunshine_state.json
+credentials_file = $CONF_DIR/sunshine_state.json
+log_path = $CONF_DIR/sunshine.log
+CONF
+if [ -n "${DESKUBE_ADMIN_PASSWORD:-}" ]; then
+  sunshine "$CONF_DIR/sunshine.conf" --creds admin "$DESKUBE_ADMIN_PASSWORD" > /dev/null 2>&1
+fi
+# uinput devices are global to the kernel and would land on the node.
+# The shim keeps input inside this session; DESKUBE_INPUT=off disables it.
+SHIM=/usr/lib64/libdeskube-uinput.so
+[ "${DESKUBE_INPUT:-shim}" = shim ] && [ -f "$SHIM" ] || SHIM=""
+
+# Sunshine is not the session. When it hangs or dies, the desktop and
+# what runs in it stay, and Sunshine is started again. It is killed when
+# it does not open its port: that is how a stuck capture shows.
+while kill -0 "$SWAY_PID" 2> /dev/null; do
+  LD_PRELOAD="$SHIM" sunshine "$CONF_DIR/sunshine.conf" &
+  PID=$!
+  (
+    tries=0
+    until curl -s -o /dev/null -m 2 "http://127.0.0.1:$PORT/serverinfo"; do
+      tries=$((tries + 1))
+      if [ "$tries" -ge 30 ]; then
+        echo "desk-session: sunshine did not open its port, restarting it"
+        kill -9 "$PID"
+        exit
+      fi
+      sleep 1
+    done
+  ) &
+  WATCH=$!
+  wait "$PID"
+  echo "desk-session: sunshine exited with $?, starting it again"
+  kill "$WATCH" 2> /dev/null
+  sleep 1
+done
+echo "desk-session: the compositor is gone"
+exit 1

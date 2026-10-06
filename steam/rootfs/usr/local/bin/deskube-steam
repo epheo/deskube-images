@@ -1,0 +1,23 @@
+#!/bin/sh
+# Steam Big Picture inside gamescope, itself a window of the session
+# compositor. gamescope does what a tiling compositor cannot: it keeps
+# game windows above the Steam UI, scales them, and gives the UI back
+# when the game exits. Sunshine sets SUNSHINE_CLIENT_* at launch.
+LOG=${XDG_RUNTIME_DIR:-/tmp}/deskube-steam.log
+W=${SUNSHINE_CLIENT_WIDTH:-1920}; H=${SUNSHINE_CLIENT_HEIGHT:-1080}; HZ=${SUNSHINE_CLIENT_FPS:-60}
+if pgrep -x gamescope-wl >/dev/null 2>&1; then
+  # A running gamescope keeps the size it started with and scales it to
+  # whatever the output becomes. This asks it for the new client's size.
+  # Its refresh rate cannot be changed this way and stays as started.
+  for sock in /tmp/.X11-unix/X*; do
+    export DISPLAY=":${sock##*X}"
+    if timeout 3 xprop -root GAMESCOPE_PID 2>/dev/null | grep -q '= '; then
+      timeout 3 xprop -root -f GAMESCOPE_XWAYLAND_MODE_CONTROL 32c \
+        -set GAMESCOPE_XWAYLAND_MODE_CONTROL "0, $W, $H, 0"
+      echo "$(date +%FT%T) already running, asked for ${W}x${H} on $DISPLAY" >> "$LOG"
+    fi
+  done
+  exit 0
+fi
+echo "$(date +%FT%T) starting at ${W}x${H}@${HZ}" >> "$LOG"
+exec gamescope -e -f -W "$W" -H "$H" -r "$HZ" -- steam -gamepadui >> "$LOG" 2>&1

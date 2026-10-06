@@ -1,0 +1,29 @@
+# Gaming variant of the container desktop: Steam, its 32 bit userspace,
+# and gamescope. Two things must come from the launcher:
+# - /proc unmasked (podman: --security-opt unmask=ALL). Steam's runtime
+#   containers mount their own /proc, which the kernel refuses while
+#   parts of the outer one are hidden.
+# - the GPU's primary node (/dev/dri/cardN) next to the render node.
+#   gamescope only needs it to exist; nothing opens it.
+ARG BASE=registry.desku.be/deskube/desktop:dev
+FROM ${BASE}
+
+USER 0
+# Steam's scripts expect a full distribution: getopt, lspci, and its two
+# UI fonts are not in a minimal Fedora, and the client hangs without them.
+# Steam and the games it runs through Proton are X11 programs, so this
+# image, and only this one, carries Xwayland. xprop is how the launcher
+# talks to gamescope.
+RUN REL=$(rpm -E %fedora); grep -qi rawhide /etc/fedora-release && REL=rawhide; \
+    dnf -y install \
+      "https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$REL.noarch.rpm" \
+    && dnf -y install steam gamescope xorg-x11-server-Xwayland xprop \
+      util-linux pciutils dejavu-sans-fonts liberation-sans-fonts \
+    && dnf clean all
+
+# Same reason as in the base image; gamescope ships CAP_SYS_NICE.
+RUN getcap -r /usr 2>/dev/null | cut -d' ' -f1 | xargs -r -n1 setcap -r
+
+COPY rootfs/ /
+RUN chmod 0755 /usr/local/bin/deskube-steam
+USER 1000

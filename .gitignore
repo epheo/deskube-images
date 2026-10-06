@@ -1,0 +1,4 @@
+# Built on demand, see hack/ptr/build.sh.
+hack/ptr/ptr
+# Sunshine admin passwords of containers started by hack/run.sh.
+hack/.rendered/
