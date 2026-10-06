@@ -7,16 +7,17 @@ images by name; everything about building and proving them is here.
 
 | Directory            | Image                                    | What                                              |
 | -------------------- | ---------------------------------------- | ------------------------------------------------- |
-| `desktop/`           | `registry.desku.be/deskube/desktop`      | sway, Sunshine, the input shim; the base of the rest |
-| `steam/`             | `registry.desku.be/deskube/desktop-steam`| Steam Big Picture in gamescope, nothing else      |
+| `base/`              | `registry.desku.be/deskube/base`         | sway, Sunshine, the input shim; nothing a user can reach |
+| `desktop/`           | `registry.desku.be/deskube/desktop`      | base plus sway's usual keys, a terminal, a launcher, Chromium |
+| `steam/`             | `registry.desku.be/deskube/desktop-steam`| base plus Steam Big Picture in gamescope           |
 | `moonlight-cli/`     | `moonlight-cli`                          | headless Moonlight that counts frames, for tests  |
-| `hack/`              |                                          | run a desktop with podman, stream to it, drive it |
+| `hack/`              |                                          | run an image with podman, stream to it, drive it  |
 
 Rules: the newest Fedora release, not a pinned one; Wayland only, no
 Xorg (Xwayland only inside gamescope); no file capabilities, no
 privilege the pod does not need. `make help` lists the targets.
 
-    make desktop moonlight-cli
+    make desktop moonlight-cli       # desktop builds base first
     hack/run.sh deskpod 48989        # rootless, only /dev/dri/renderD128 passed in
     hack/e2e.sh deskpod 48989        # pair through the admin API, stream headless
     CODEC=av1 SIZE=2560x1440 hack/e2e.sh deskpod 48989
@@ -24,11 +25,15 @@ privilege the pod does not need. `make help` lists the targets.
 Sunshine web UI: https://<host>:48990, user admin, password in
 `hack/.rendered/deskpod-sunshine-admin-password`.
 
-## The desktop image
+## The base image
 
 With the host's render node it draws and encodes on the GPU (wlroots
 capture, VAAPI). Without one it does both on the CPU (screen cast
-portal, libx264).
+portal, libx264). Its sway config puts nothing on the output: no bar,
+no terminal, no bindings, a black background. An image that puts one
+app on it leaves a user nothing to reach but that app, and the stream
+is black until the app draws. The base is 1.36 GB: Mesa with LLVM
+0.42 GB, Sunshine with Qt 0.1 GB; sway and swaybg are 4 MiB.
 
 Result 2026-10-05, Ryzen AI Max+ 395, Radeon 8060S, Fedora 44:
 
@@ -94,7 +99,7 @@ What bit:
 Sunshine injects through uinput, and uinput devices are global to the
 kernel: created from a container they land on the node, where the
 console session consumes them and the headless compositor never sees
-them. `desktop/shim` is a preload library that answers Sunshine's
+them. `base/shim` is a preload library that answers Sunshine's
 uinput calls itself and replays the events into sway over the Wayland
 virtual pointer and virtual keyboard protocols. No device, no
 privilege, no rule on the node, and input cannot leave its session.
@@ -113,19 +118,44 @@ keyboard for driving a desktop from inside it during tests
 (`hack/ptr/build.sh`, then `podman cp hack/ptr/ptr <name>:/tmp/ptr`).
 Games poll their keys, so it holds them.
 
-## App images
+## The desktop image
 
-`steam/` has no desktop behind the app. Its
-app list holds one entry, and its own sway config has no bar, no
-terminal, no bindings and a black background: the keyboard reaches
-nothing but the app, and the stream is black until it draws. The
-compositor stays sway because it is 4 MiB of the image and the proven
-path for gamescope, Sunshine's capture and the input shim. cage, the
-wlroots kiosk, would give the same by construction (it has screencopy,
-virtual input and output management) at the price of a second session
-path; worth it only when an app-only desktop class exists in the
-operator. gamescope alone as the compositor is out: Sunshine cannot
-capture it.
+sway with the keys most people know from it, foot as the terminal,
+fuzzel as the launcher, Chromium. Mod4 is the Super key, which Moonlight
+passes on in fullscreen ("capture system keyboard shortcuts").
+
+    Super+Return        terminal           Super+d             launcher
+    Super+Shift+Return  Chromium           Super+Shift+q       close window
+    Super+1..5          workspace          Super+Shift+1..5    move window there
+    Super+arrows, hjkl  focus              Super+Shift+same    move
+    Super+f             fullscreen         Super+Shift+space   float
+    Super+b, v          split              Super+s, w, e       stacking, tabbed, split
+    Super+r             resize mode        Super+Tab           last workspace
+    Super+minus         scratchpad         Super+Shift+c       reload the config
+
+There is no exit binding: the compositor is the session, ending it ends
+the pod. Chromium runs on Wayland, with no first run page and no
+keyring; its sandbox needs user namespaces, which podman allows and
+the operator's `nestedSandboxes` provides. Result 2026-10-06: 60.1 fps
+at 1920x1080, Chromium and a terminal side by side.
+
+Chromium crashes at start when the compositor's seat has no active
+keyboard: it then gets `modifiers` without a `keymap` and dereferences
+a null state. That happens when the keyboard it last saw was destroyed
+while others remain; with the shim alone it cannot, since one keyboard
+gone removes the capability. Test tools that bring their own keyboard
+must keep it alive past the app's start (`hack/ptr`'s linger).
+
+## The games
+
+`steam/` sits on base, so there is no desktop
+behind the game: the app list holds one entry, and the base's sway
+config leaves the keyboard nothing to reach. The compositor stays sway
+because it is 4 MiB of the image and the proven path for gamescope,
+Sunshine's capture and the input shim. cage, the wlroots kiosk, would
+give the same by construction (it has screencopy, virtual input and
+output management) at the price of a second session path. gamescope
+alone as the compositor is out: Sunshine cannot capture it.
 
 ## Open
 

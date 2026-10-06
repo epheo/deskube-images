@@ -1,0 +1,63 @@
+# The base of every DeskuBe image: a headless Wayland compositor on the
+# host GPU's render node, streamed by Sunshine. No kernel, no VM, and
+# nothing a user can reach: the images on top put a desktop or one app
+# on the output.
+# The newest Fedora release, not a pinned one. Rawhide builds only while
+# RPM Fusion's Mesa codecs match Fedora's Mesa, which they often do not.
+ARG FEDORA=latest
+FROM registry.fedoraproject.org/fedora:${FEDORA} AS shim
+RUN dnf -y install gcc wayland-devel libxkbcommon-devel libevdev-devel && dnf clean all
+COPY shim/ /shim/
+WORKDIR /shim
+RUN for p in virtual-keyboard-unstable-v1 wlr-virtual-pointer-unstable-v1; do \
+      wayland-scanner client-header protocol/$p.xml $p-client-protocol.h && \
+      wayland-scanner private-code protocol/$p.xml $p-protocol.c || exit 1; \
+    done \
+    && gcc -O2 -Wall -Wextra -fPIC -shared -fvisibility=hidden -o libdeskube-uinput.so \
+         deskube-uinput.c virtual-keyboard-unstable-v1-protocol.c wlr-virtual-pointer-unstable-v1-protocol.c \
+         -lwayland-client -lxkbcommon -lm -ldl -lpthread \
+    && gcc -O2 -Wall -o uinput-test uinput-test.c $(pkg-config --cflags --libs libevdev)
+
+FROM registry.fedoraproject.org/fedora:${FEDORA}
+
+ARG SUNSHINE_VERSION=2026.914.233613
+
+# Fedora's Mesa ships VAAPI without H.264 and HEVC; the freeworld build
+# from RPM Fusion adds them. AV1 encode works either way on RDNA 3.5.
+# The desktop is Wayland only: sway would pull Xwayland in as a weak
+# dependency. Rawhide has its own RPM Fusion release package.
+RUN REL=$(rpm -E %fedora); grep -qi rawhide /etc/fedora-release && REL=rawhide; \
+    dnf -y install \
+      "https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$REL.noarch.rpm" \
+    && dnf -y install --exclude=xorg-x11-server-Xwayland \
+      sway swaybg \
+      mesa-dri-drivers mesa-vulkan-drivers mesa-va-drivers-freeworld libva-utils vulkan-tools \
+      pipewire pipewire-pulseaudio wireplumber pulseaudio-utils dbus-daemon \
+      procps-ng iproute libcap shadow-utils tini grim glibc-langpack-en \
+      xdg-desktop-portal xdg-desktop-portal-wlr \
+      "https://github.com/LizardByte/Sunshine/releases/download/v${SUNSHINE_VERSION}/Sunshine-${SUNSHINE_VERSION}-1.fc$(rpm -E %fedora).x86_64.rpm" \
+    && dnf clean all
+
+# Packages grant file capabilities (Sunshine CAP_SYS_ADMIN for KMS, sway
+# CAP_SYS_NICE). An unprivileged pod cannot hold them, and exec of such
+# a binary then fails outright. Nothing here needs them.
+RUN getcap -r /usr 2>/dev/null | cut -d' ' -f1 | xargs -r -n1 setcap -r
+
+# The home and the passwd file are opened to group 0 because OpenShift
+# runs the image as an arbitrary UID in that group; see desk-session.
+RUN useradd -m -u 1000 -s /bin/bash desk \
+    && chgrp -R 0 /home/desk && chmod -R g=u /home/desk && chmod g=u /etc/passwd
+ENV HOME=/home/desk
+ENV LANG=en_US.UTF-8
+# No udev runs in the container, so libraries that wait for its events
+# never see a gamepad arrive. SDL watches /dev/input itself when told to.
+ENV SDL_JOYSTICK_DISABLE_UDEV=1
+COPY rootfs/ /
+COPY --from=shim /shim/libdeskube-uinput.so /usr/lib64/libdeskube-uinput.so
+COPY --from=shim /shim/uinput-test /usr/libexec/deskube-uinput-test
+RUN chmod 0755 /usr/local/bin/desk-session /usr/local/bin/deskube-resize
+
+USER 1000
+WORKDIR /home/desk
+# Desktop apps orphan children freely; without a reaping PID 1 they stay as zombies.
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/desk-session"]

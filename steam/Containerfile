@@ -1,11 +1,11 @@
-# Gaming variant of the container desktop: Steam, its 32 bit userspace,
-# and gamescope. Two things must come from the launcher:
+# Steam, its 32 bit userspace, and gamescope on the base image: Big
+# Picture is all the stream shows. Two things must come from the launcher:
 # - /proc unmasked (podman: --security-opt unmask=ALL). Steam's runtime
 #   containers mount their own /proc, which the kernel refuses while
 #   parts of the outer one are hidden.
 # - the GPU's primary node (/dev/dri/cardN) next to the render node.
 #   gamescope only needs it to exist; nothing opens it.
-ARG BASE=registry.desku.be/deskube/desktop:dev
+ARG BASE=registry.desku.be/deskube/base:dev
 FROM ${BASE}
 
 USER 0

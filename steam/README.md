@@ -1,6 +1,6 @@
 # Steam
 
-Steam, its 32 bit userspace, and gamescope on top of the desktop image.
+Steam, its 32 bit userspace, and gamescope on the base image.
 Steam Big Picture in gamescope is the only thing the stream shows.
 
     make steam

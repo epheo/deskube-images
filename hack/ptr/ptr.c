@@ -1,7 +1,12 @@
 /* Virtual pointer and keyboard for driving a container desktop from inside:
  *   ptr move DX DY [steps]   relative motion, spread over steps 8 ms apart
  *   ptr click [hold-ms]      left button, held; games poll, a tap is lost
- *   ptr key CODE [hold-ms]   an evdev key code on a us keymap
+ *   ptr key CODE[,CODE..] [hold-ms] [linger-ms]
+ *                            evdev key codes on a us keymap, pressed in order and
+ *                            released in reverse: 125,28 is Super+Enter. Linger
+ *                            keeps the keyboard alive after: it is the seat's
+ *                            active one, and a client that starts after it is
+ *                            gone gets no keymap, which Chromium cannot take.
  * Speaks the same wlroots protocols as the input shim. Build: build.sh. */
 #define _GNU_SOURCE
 #include <stdio.h>
@@ -68,8 +73,10 @@ int main(int argc, char **argv)
 		wl_display_roundtrip(dpy);
 	}
 	else if (!strcmp(argv[1], "key") && argc >= 3 && kmgr) {
-		/* key EVDEV_CODE [hold-ms]: a standard us keymap, so codes are real scancodes */
-		int code = atoi(argv[2]), hold = argc > 3 ? atoi(argv[3]) : 150;
+		/* a standard us keymap, so codes are real scancodes */
+		int codes[8], n = 0, hold = argc > 3 ? atoi(argv[3]) : 150, linger = argc > 4 ? atoi(argv[4]) : 0;
+		for (char *tok = strtok(argv[2], ","); tok && n < 8; tok = strtok(NULL, ","))
+			codes[n++] = atoi(tok);
 		struct xkb_context *ctx = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
 		struct xkb_rule_names names = { .layout = "us" };
 		struct xkb_keymap *km = xkb_keymap_new_from_names(ctx, &names, XKB_KEYMAP_COMPILE_NO_FLAGS);
@@ -80,12 +87,19 @@ int main(int argc, char **argv)
 		struct zwp_virtual_keyboard_v1 *k = zwp_virtual_keyboard_manager_v1_create_virtual_keyboard(kmgr, seat);
 		zwp_virtual_keyboard_v1_keymap(k, WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1, fd, len);
 		wl_display_roundtrip(dpy);
-		zwp_virtual_keyboard_v1_key(k, now(), code, 1);
-		wl_display_roundtrip(dpy);
-		usleep(hold * 1000);
-		zwp_virtual_keyboard_v1_key(k, now(), code, 0);
-		wl_display_roundtrip(dpy);
-		usleep(50000);
+		/* The compositor takes the modifier state from the client, as the shim sends it. */
+		struct xkb_state *st = xkb_state_new(km);
+		for (int i = 0; i < 2 * n; i++) {
+			int code = i < n ? codes[i] : codes[2 * n - 1 - i], down = i < n;
+			zwp_virtual_keyboard_v1_key(k, now(), code, down);
+			xkb_state_update_key(st, code + 8, down ? XKB_KEY_DOWN : XKB_KEY_UP);
+			zwp_virtual_keyboard_v1_modifiers(k, xkb_state_serialize_mods(st, XKB_STATE_MODS_DEPRESSED),
+				xkb_state_serialize_mods(st, XKB_STATE_MODS_LATCHED), xkb_state_serialize_mods(st, XKB_STATE_MODS_LOCKED),
+				xkb_state_serialize_layout(st, XKB_STATE_LAYOUT_EFFECTIVE));
+			wl_display_roundtrip(dpy);
+			usleep(i == n - 1 ? hold * 1000 : 20000);
+		}
+		usleep((50 + linger) * 1000);
 		zwp_virtual_keyboard_v1_destroy(k);
 	}
 	usleep(50000);
