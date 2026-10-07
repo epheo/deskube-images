@@ -15,8 +15,9 @@
  *
  * Gamepads are the exception: no Wayland protocol carries them, games
  * read them from kernel devices. When the launcher passed the real
- * /dev/uinput in, a gamepad is created there for real; otherwise it
- * fails like touch and pen.
+ * /dev/uinput in, a gamepad is created there for real. Otherwise it
+ * becomes a socket pad: its events go as datagrams to a socket a game
+ * may bind, see send_pad(). A game that does not stays without a pad.
  */
 #define _GNU_SOURCE
 #include <dlfcn.h>
@@ -32,6 +33,8 @@
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
+#include <sys/socket.h>
+#include <sys/un.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -48,6 +51,11 @@
 #define MAX_DEVICES 16
 /* One wheel detent is 120 hi-res units and scrolls 15 px, the libinput convention. */
 #define PIXELS_PER_DETENT 15.0
+#define PAD_AXES 16
+#define PAD_BATCH 64
+#define PAD_MAGIC 0x44504b44 /* "DKPD" little endian */
+#define PAD_EVENTS 1
+#define PAD_GONE 2
 
 enum kind { KIND_UNKNOWN, KIND_KEYBOARD, KIND_REL_POINTER, KIND_ABS_POINTER, KIND_GAMEPAD };
 
@@ -82,6 +90,14 @@ struct device {
 	bool moved_abs;
 	int wheel[2], wheel_hires[2];
 	bool has_hires[2];
+
+	/* A socket pad: its number, axis ranges, and events since the last SYN_REPORT. */
+	int pad_sock, pad_hold; /* 0 when unused: the slot is zeroed */
+	uint16_t pad_id;
+	int naxes;
+	struct { uint16_t code; int32_t min, max; } axes[PAD_AXES];
+	int nbatch;
+	struct { uint16_t type, code; int32_t value; } batch[PAD_BATCH];
 };
 
 static struct device devices[MAX_DEVICES];
@@ -282,21 +298,146 @@ static void forget_calls(struct device *dev)
 	dev->ncalls = dev->calls_cap = 0;
 }
 
+static const char *pad_path(void)
+{
+	static char path[sizeof(((struct sockaddr_un *)0)->sun_path)];
+	const char *env = getenv("DESKUBE_PAD_SOCKET");
+	const char *run = getenv("XDG_RUNTIME_DIR");
+
+	if (env && *env)
+		snprintf(path, sizeof(path), "%s", env);
+	else if (run && *run)
+		snprintf(path, sizeof(path), "%s/deskube-pads", run);
+	else
+		return NULL;
+	return path;
+}
+
+/*
+ * One datagram per batch, to whoever bound the pad socket:
+ *   u32 magic, u16 version 1, u16 pad, u8 kind, u8 naxes, u16 nevents,
+ *   naxes x {u16 code, u16 0, i32 min, i32 max},
+ *   nevents x {u16 type, u16 code, i32 value}, little endian.
+ * Every batch carries the ranges, so a game that starts or restarts
+ * mid stream reads the pad from its next move. Nobody listening, or a
+ * full queue, drops the batch: a pad is state, the next one catches up.
+ */
+static void send_pad(struct device *dev, uint8_t kind)
+{
+	const char *path = pad_path();
+	unsigned char buf[16 + PAD_AXES * 12 + PAD_BATCH * 8];
+	size_t n = 0;
+	struct sockaddr_un to = {.sun_family = AF_UNIX};
+
+	if (!path || dev->pad_sock <= 0)
+		return;
+	snprintf(to.sun_path, sizeof(to.sun_path), "%s", path);
+	uint32_t magic = PAD_MAGIC;
+	uint16_t version = 1, nev = kind == PAD_EVENTS ? (uint16_t)dev->nbatch : 0;
+	uint8_t naxes = (uint8_t)dev->naxes;
+	memcpy(buf + n, &magic, 4), n += 4;
+	memcpy(buf + n, &version, 2), n += 2;
+	memcpy(buf + n, &dev->pad_id, 2), n += 2;
+	buf[n++] = kind;
+	buf[n++] = naxes;
+	memcpy(buf + n, &nev, 2), n += 2;
+	memset(buf + n, 0, 4), n += 4;
+	for (int i = 0; i < dev->naxes; i++) {
+		uint16_t zero = 0;
+		memcpy(buf + n, &dev->axes[i].code, 2), n += 2;
+		memcpy(buf + n, &zero, 2), n += 2;
+		memcpy(buf + n, &dev->axes[i].min, 4), n += 4;
+		memcpy(buf + n, &dev->axes[i].max, 4), n += 4;
+	}
+	for (int i = 0; i < nev; i++) {
+		memcpy(buf + n, &dev->batch[i].type, 2), n += 2;
+		memcpy(buf + n, &dev->batch[i].code, 2), n += 2;
+		memcpy(buf + n, &dev->batch[i].value, 4), n += 4;
+	}
+	sendto(dev->pad_sock, buf, n, MSG_DONTWAIT | MSG_NOSIGNAL, (struct sockaddr *)&to, sizeof(to));
+	dev->nbatch = 0;
+}
+
+static void pad_event(struct device *dev, const struct input_event *ev)
+{
+	if (ev->type == EV_SYN) {
+		if (ev->code == SYN_REPORT && dev->nbatch)
+			send_pad(dev, PAD_EVENTS);
+		return;
+	}
+	if (ev->type != EV_KEY && ev->type != EV_ABS)
+		return;
+	if (dev->nbatch == PAD_BATCH)
+		send_pad(dev, PAD_EVENTS);
+	dev->batch[dev->nbatch].type = ev->type;
+	dev->batch[dev->nbatch].code = ev->code;
+	dev->batch[dev->nbatch].value = ev->value;
+	dev->nbatch++;
+}
+
+/* The ranges a game needs to read the sticks, from the recorded setup. */
+static void keep_axes(struct device *dev)
+{
+	dev->naxes = 0;
+	for (int i = 0; i < dev->ncalls && dev->naxes < PAD_AXES; i++) {
+		const struct call *call = &dev->calls[i];
+		if (call->request != UI_ABS_SETUP || !call->blob)
+			continue;
+		const struct uinput_abs_setup *abs = call->blob;
+		dev->axes[dev->naxes].code = abs->code;
+		dev->axes[dev->naxes].min = abs->absinfo.minimum;
+		dev->axes[dev->naxes].max = abs->absinfo.maximum;
+		dev->naxes++;
+	}
+}
+
+static int create_socket_pad(struct device *dev)
+{
+	if (!pad_path()) {
+		say("gamepad \"%s\": no real %s and no XDG_RUNTIME_DIR, refusing it", dev->name, UINPUT_PATH);
+		errno = ENODEV;
+		return -1;
+	}
+	/*
+	 * The host polls a pad's descriptor for rumble. Ours is a memfd,
+	 * always readable at its end: it would spin. The read end of a pipe
+	 * nobody writes to never wakes it.
+	 */
+	int hold[2];
+	if (pipe2(hold, O_CLOEXEC) < 0)
+		return -1;
+	if (dup3(hold[0], dev->fd, dev->open_flags & O_CLOEXEC) < 0) {
+		real_close(hold[0]);
+		real_close(hold[1]);
+		return -1;
+	}
+	real_close(hold[0]);
+	dev->pad_hold = hold[1];
+	dev->pad_sock = socket(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
+	if (dev->pad_sock < 0) {
+		dev->pad_sock = 0;
+		return -1;
+	}
+	dev->pad_id = (uint16_t)++next_sysname;
+	keep_axes(dev);
+	dev->created = true;
+	say("\"%s\" is socket pad %d on %s", dev->name, dev->pad_id, pad_path());
+	return 0;
+}
+
 /*
  * Builds the gamepad on the kernel's uinput and puts it behind the
  * descriptor the host already holds, so rumble reads and everything
- * after this reach the kernel without us.
+ * after this reach the kernel without us. Without the real uinput it
+ * becomes a socket pad.
  */
 static int create_gamepad(struct device *dev)
 {
 	int saved;
 	int real = dev->calls_lost ? -1 : real_open(UINPUT_PATH, dev->open_flags);
 
-	if (real < 0) {
-		say("gamepad \"%s\" needs the real %s in this container, refusing it", dev->name, UINPUT_PATH);
-		errno = ENODEV;
-		return -1;
-	}
+	if (real < 0)
+		return create_socket_pad(dev);
 	for (int i = 0; i < dev->ncalls; i++) {
 		const struct call *call = &dev->calls[i];
 		if (real_ioctl(real, call->request, call->blob ? call->blob : (void *)(intptr_t)call->value) < 0)
@@ -365,6 +506,15 @@ static int create_device(struct device *dev)
 
 static void destroy_device(struct device *dev)
 {
+	if (dev->pad_sock > 0) {
+		send_pad(dev, PAD_GONE);
+		real_close(dev->pad_sock);
+		dev->pad_sock = 0;
+	}
+	if (dev->pad_hold > 0) {
+		real_close(dev->pad_hold);
+		dev->pad_hold = 0;
+	}
 	if (dev->keyboard)
 		zwp_virtual_keyboard_v1_destroy(dev->keyboard);
 	if (dev->pointer)
@@ -535,12 +685,14 @@ static void pointer_event(struct device *dev, const struct input_event *ev)
 static void device_events(struct device *dev, const struct input_event *ev, size_t count)
 {
 	for (size_t i = 0; i < count; i++) {
-		if (ev[i].type == EV_SYN) {
+		if (ev[i].type == EV_SYN && dev->kind != KIND_GAMEPAD) {
 			if (ev[i].code == SYN_REPORT) {
 				if (dev->pointer)
 					pointer_frame(dev);
 				pump();
 			}
+		} else if (dev->kind == KIND_GAMEPAD) {
+			pad_event(dev, &ev[i]);
 		} else if (dev->keyboard) {
 			if (ev[i].type == EV_KEY)
 				key_event(dev, ev[i].code, ev[i].value);
