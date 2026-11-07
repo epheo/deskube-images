@@ -4,6 +4,7 @@
 # ./e2e.sh [name] [base-port]   CODEC=h264|hevc|av1  SIZE=1920x1080  FPS=60  APP=Desktop
 # PAD=/dev/input/eventN makes the client send that gamepad instead of
 # only watching; PAD_MAPPING is its SDL mapping line.
+# MOONLIGHT=<image> streams with another build of moonlight-cli.
 set -euo pipefail
 cd "$(dirname "$0")"
 NAME=${1:-deskpod}; PORT=${2:-48989}
@@ -12,7 +13,8 @@ CODEC=${CODEC:-auto}; SIZE=${SIZE:-1920x1080}; FPS=${FPS:-60}; SECS=${SECS:-20}
 PASS=$(cat ".rendered/$NAME-sunshine-admin-password")
 WORK=${WORK:-$(mktemp -d)}
 CACHE=$WORK/moonlight-cache; mkdir -p "$CACHE"
-ml() { podman run --rm --network host -v "$CACHE:/root/.cache/moonlight:Z" -i moonlight-cli "$@"; }
+MOONLIGHT=${MOONLIGHT:-moonlight-cli}
+ml() { podman run --rm --network host -v "$CACHE:/root/.cache/moonlight:Z" -i "$MOONLIGHT" "$@"; }
 api() { curl -sk -u "admin:$PASS" -H 'Content-Type: application/json' "$@"; }
 
 for _ in $(seq 1 30); do api "https://$HOST:$WEB/api/config" -o /dev/null && break; sleep 1; done
@@ -35,11 +37,11 @@ if [ -n "${PAD:-}" ]; then
   INPUT_ARGS=(-input "$PAD")
   POD_ARGS=(--security-opt label=disable -v /dev/input:/dev/input -e "SDL_GAMECONTROLLERCONFIG=$PAD_MAPPING")
 fi
-timeout "$SECS" podman run --rm --network host -v "$CACHE:/root/.cache/moonlight:Z" "${POD_ARGS[@]}" -i --entrypoint stdbuf moonlight-cli \
+timeout "$SECS" podman run --rm --network host -v "$CACHE:/root/.cache/moonlight:Z" "${POD_ARGS[@]}" -i --entrypoint stdbuf "$MOONLIGHT" \
   -oL -eL moonlight stream -port "$PORT" -platform fake "${INPUT_ARGS[@]}" -app "${APP:-Desktop}" \
   -width "${SIZE%x*}" -height "${SIZE#*x}" -fps "$FPS" -bitrate "${BITRATE:-20000}" -codec "$CODEC" -verbose "$HOST" \
   > "$WORK/stream.log" 2>&1 || true
-timeout 20 podman run --rm --network host -v "$CACHE:/root/.cache/moonlight:Z" -i moonlight-cli quit -port "$PORT" "$HOST" > /dev/null 2>&1 || true
+timeout 20 podman run --rm --network host -v "$CACHE:/root/.cache/moonlight:Z" -i "$MOONLIGHT" quit -port "$PORT" "$HOST" > /dev/null 2>&1 || true
 grep -E "Stream |first audio packet|Video frames|rror" "$WORK/stream.log" || true
 echo "logs in $WORK"
 # The first packet proves little: a capture that restarts on every frame

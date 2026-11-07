@@ -8,9 +8,14 @@ RUN dnf -y install git cmake gcc gcc-c++ make pkgconf-pkg-config \
       ffmpeg-free-devel sdl2-compat-devel \
     && dnf clean all
 COPY count.c /tmp/count.c
+# A commit, not a branch: the patch below and the tests depend on the
+# source, and the commit pins its submodules too.
+ARG MOONLIGHT_COMMIT=f32e415aea6797d261d6b470dcf8bf18727341c2
 # The fake platform gets a decoder that counts frames; every .c under
 # src/ is compiled in. The grep fails the build if upstream moved.
-RUN git clone --depth 1 --recursive https://github.com/moonlight-stream/moonlight-embedded.git /src \
+RUN git init -q /src && cd /src \
+ && git fetch -q --depth 1 https://github.com/moonlight-stream/moonlight-embedded.git "$MOONLIGHT_COMMIT" \
+ && git checkout -q FETCH_HEAD && git submodule update -q --init --recursive --depth 1 \
  && cp /tmp/count.c /src/src/count.c \
  && echo 'extern DECODER_RENDERER_CALLBACKS decoder_callbacks_count;' >> /src/src/video/video.h \
  && sed -i '/^DECODER_RENDERER_CALLBACKS\* platform_get_video/,/switch (system) {/ s/switch (system) {/switch (system) {\n  case FAKE:\n    return \&decoder_callbacks_count;/' /src/src/platform.c \
