@@ -5,7 +5,7 @@
 #   parts of the outer one are hidden.
 # - the GPU's primary node (/dev/dri/cardN) next to the render node.
 #   gamescope only needs it to exist; nothing opens it.
-ARG BASE=registry.desku.be/deskube/base:dev
+ARG BASE=ghcr.io/epheo/deskube-base:main
 FROM ${BASE}
 
 USER 0

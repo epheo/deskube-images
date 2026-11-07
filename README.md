@@ -7,9 +7,9 @@ images by name; everything about building and proving them is here.
 
 | Directory            | Image                                    | What                                              |
 | -------------------- | ---------------------------------------- | ------------------------------------------------- |
-| `base/`              | `registry.desku.be/deskube/base`         | sway, Sunshine, the input shim; nothing a user can reach |
-| `desktop/`           | `registry.desku.be/deskube/desktop`      | base plus sway's usual keys, a terminal, a launcher, Chromium |
-| `steam/`             | `registry.desku.be/deskube/desktop-steam`| base plus Steam Big Picture in gamescope           |
+| `base/`              | `ghcr.io/epheo/deskube-base`             | sway, Sunshine, the input shim; nothing a user can reach |
+| `desktop/`           | `ghcr.io/epheo/deskube-desktop`          | base plus sway's usual keys, a terminal, a launcher, Chromium |
+| `steam/`             | `ghcr.io/epheo/deskube-steam`            | base plus Steam Big Picture in gamescope          |
 | `moonlight-cli/`     | `moonlight-cli`                          | headless Moonlight that counts frames, for tests  |
 | `hack/`              |                                          | run an image with podman, stream to it, drive it  |
 

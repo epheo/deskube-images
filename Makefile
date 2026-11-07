@@ -1,10 +1,12 @@
 # Container images for DeskuBe desktops. The operator,
 # github.com/epheo/deskube, only knows these images by name.
 CONTAINER_TOOL ?= podman
-REGISTRY ?= registry.desku.be/deskube
-BASE_IMG ?= $(REGISTRY)/base:dev
-DESKTOP_IMG ?= $(REGISTRY)/desktop:dev
-STEAM_IMG ?= $(REGISTRY)/desktop-steam:dev
+REGISTRY ?= ghcr.io/epheo
+# A tag of your own keeps parallel builds from replacing each other's images.
+TAG ?= main
+BASE_IMG ?= $(REGISTRY)/deskube-base:$(TAG)
+DESKTOP_IMG ?= $(REGISTRY)/deskube-desktop:$(TAG)
+STEAM_IMG ?= $(REGISTRY)/deskube-steam:$(TAG)
 
 .PHONY: help
 help: ## Show this help.

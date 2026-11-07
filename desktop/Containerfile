@@ -3,7 +3,7 @@
 # Chromium runs on Wayland by itself when WAYLAND_DISPLAY is set, and
 # its sandbox needs user namespaces, which the launcher must allow as
 # for Steam (podman does; the operator's nestedSandboxes on a cluster).
-ARG BASE=registry.desku.be/deskube/base:dev
+ARG BASE=ghcr.io/epheo/deskube-base:main
 FROM ${BASE}
 USER 0
 # The launcher lists desktop entries; a second Sunshine or foot's server

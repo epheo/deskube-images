@@ -14,12 +14,12 @@ NAME=${1:-deskpod}; PORT=${2:-48989}
 RENDER=${RENDER:-/dev/dri/renderD128}
 PROFILE_ARGS=()
 if [ "${PROFILE:-}" = steam ]; then
-  IMAGE=${IMAGE:-registry.desku.be/deskube/desktop-steam:dev}
+  IMAGE=${IMAGE:-ghcr.io/epheo/deskube-steam:${TAG:-main}}
   # See steam/Containerfile for the why of both.
   CARD=$(basename "$(ls -d "/sys/class/drm/$(basename "$RENDER")/device/drm/card"* | head -1)")
   PROFILE_ARGS=(--security-opt unmask=ALL --device "/dev/dri/$CARD")
 fi
-IMAGE=${IMAGE:-registry.desku.be/deskube/desktop:dev}
+IMAGE=${IMAGE:-ghcr.io/epheo/deskube-desktop:${TAG:-main}}
 NET_ARGS=(--network host)
 if [ -n "${NETWORK:-}" ]; then
   podman network exists "$NETWORK" || podman network create "$NETWORK" > /dev/null

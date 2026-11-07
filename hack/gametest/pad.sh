@@ -7,7 +7,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 NAME=${1:-deskgame}; PORT=${2:-49089}
-IMAGE=${IMAGE:-registry.desku.be/deskube/desktop:dev}
+IMAGE=${IMAGE:-ghcr.io/epheo/deskube-desktop:${TAG:-main}}
 BUILD=${BUILD:-$(mktemp -d)}
 podman run --rm --security-opt label=disable -v "$PWD:/src:ro" -v "$BUILD:/out" \
   registry.fedoraproject.org/fedora:latest sh -ec '
