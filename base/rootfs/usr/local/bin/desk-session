@@ -2,6 +2,10 @@
 # Session for a container desktop: bus, audio, compositor, Sunshine.
 # No systemd and no logind here, so everything is started by hand.
 set -u
+# Whatever this script starts inherits its environment, and no app needs
+# the admin password. Still readable by this UID: PID 1's environment.
+ADMIN_PASSWORD=${DESKUBE_ADMIN_PASSWORD:-}
+unset DESKUBE_ADMIN_PASSWORD
 # OpenShift runs the image under a UID of its choosing, one /etc/passwd
 # does not know. Programs that look their user up then fail, so the
 # entry of the image's user is moved to that UID.
@@ -140,8 +144,8 @@ file_state = $CONF_DIR/sunshine_state.json
 credentials_file = $CONF_DIR/sunshine_state.json
 log_path = $CONF_DIR/sunshine.log
 CONF
-if [ -n "${DESKUBE_ADMIN_PASSWORD:-}" ]; then
-  sunshine "$CONF_DIR/sunshine.conf" --creds admin "$DESKUBE_ADMIN_PASSWORD" > /dev/null 2>&1
+if [ -n "$ADMIN_PASSWORD" ]; then
+  sunshine "$CONF_DIR/sunshine.conf" --creds admin "$ADMIN_PASSWORD" > /dev/null 2>&1
 fi
 # uinput devices are global to the kernel and would land on the node.
 # The shim keeps input inside this session; DESKUBE_INPUT=off disables it.
