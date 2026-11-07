@@ -801,6 +801,11 @@ static bool takes_mode(int flags)
 	return (flags & O_CREAT) || (flags & O_TMPFILE) == O_TMPFILE;
 }
 
+/*
+ * Sunshine 2026.914 reaches /dev/uinput through access() and open(),
+ * libevdev through open64(). No other library Sunshine loads names the
+ * device, so openat() and the fortified __open_2() stay unhooked.
+ */
 EXPORT int access(const char *path, int mode)
 {
 	resolve();
