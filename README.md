@@ -109,9 +109,9 @@ privilege, no rule on the node, and input cannot leave its session.
       /usr/libexec/deskube-uinput-test 'touch /tmp/deskube-typed'
 
 drives it the way Sunshine's backend does. Keyboard, relative and
-absolute mouse, wheel. `LAYOUT=fr hack/run.sh` picks the keymap. Touch
-and pen are refused, Sunshine reports them as unsupported. Gamepads:
-see `steam/README.md`.
+absolute mouse, wheel. `LAYOUT=fr hack/run.sh` picks the keymap; an
+unknown one falls back to us. Touch and pen are refused, Sunshine
+reports them as unsupported. Gamepads: see `steam/README.md`.
 
 `hack/ptr` is the same idea as a command: a virtual pointer and
 keyboard for driving a desktop from inside it during tests

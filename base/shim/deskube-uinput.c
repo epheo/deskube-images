@@ -206,16 +206,30 @@ static bool wayland_ready(void)
 		    keyboard_manager ? "" : "virtual-keyboard");
 		return false;
 	}
+	return true;
+}
 
+/* A mistyped layout must not cost the session its keyboard. */
+static struct xkb_keymap *keymap(void)
+{
 	const char *layout = getenv("DESKUBE_KEYBOARD_LAYOUT");
 	struct xkb_rule_names names = {.layout = layout && *layout ? layout : "us"};
-	xkb_ctx = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
-	xkb_map = xkb_ctx ? xkb_keymap_new_from_names(xkb_ctx, &names, XKB_KEYMAP_COMPILE_NO_FLAGS) : NULL;
-	if (!xkb_map) {
-		say("cannot build an xkb keymap for layout %s", names.layout);
-		return false;
+
+	if (xkb_map)
+		return xkb_map;
+	if (!xkb_ctx)
+		xkb_ctx = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
+	if (!xkb_ctx)
+		return NULL;
+	xkb_map = xkb_keymap_new_from_names(xkb_ctx, &names, XKB_KEYMAP_COMPILE_NO_FLAGS);
+	if (!xkb_map && strcmp(names.layout, "us")) {
+		say("no xkb layout %s, falling back to us", names.layout);
+		names.layout = "us";
+		xkb_map = xkb_keymap_new_from_names(xkb_ctx, &names, XKB_KEYMAP_COMPILE_NO_FLAGS);
 	}
-	return true;
+	if (!xkb_map)
+		say("cannot build an xkb keymap for layout %s", names.layout);
+	return xkb_map;
 }
 
 /* Requests go out now; replies are drained so the socket never backs up. */
@@ -236,7 +250,8 @@ static void pump(void)
 
 static bool attach_keyboard(struct device *dev)
 {
-	char *text = xkb_keymap_get_as_string(xkb_map, XKB_KEYMAP_FORMAT_TEXT_V1);
+	struct xkb_keymap *map = keymap();
+	char *text = map ? xkb_keymap_get_as_string(map, XKB_KEYMAP_FORMAT_TEXT_V1) : NULL;
 	if (!text)
 		return false;
 	size_t size = strlen(text) + 1;
@@ -251,7 +266,7 @@ static bool attach_keyboard(struct device *dev)
 	dev->keyboard = zwp_virtual_keyboard_manager_v1_create_virtual_keyboard(keyboard_manager, seat);
 	zwp_virtual_keyboard_v1_keymap(dev->keyboard, WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1, fd, size);
 	real_close(fd);
-	dev->xkb = xkb_state_new(xkb_map);
+	dev->xkb = xkb_state_new(map);
 	return dev->xkb != NULL;
 }
 
