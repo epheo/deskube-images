@@ -1,0 +1,5 @@
+# Fedora release, sha256, URL of every file the Steam build downloads.
+# A release with no lines here stops the build: the base moved on.
+# RPM Fusion: the releases/ tree never changes; rawhide's moves when it branches.
+45 04582bbbb8edf54cc5340d807fb57ae44fea2e8c513b1928a9637b518817328e https://download1.rpmfusion.org/nonfree/fedora/releases/45/Everything/x86_64/os/Packages/r/rpmfusion-nonfree-release-45-2.noarch.rpm
+46 bed950294b5d9d81e4dbaeaac04e1b2dd45b1bc1534460561e906276e82d7fcd https://download1.rpmfusion.org/nonfree/fedora/development/rawhide/Everything/x86_64/os/Packages/r/rpmfusion-nonfree-release-46-0.2.noarch.rpm

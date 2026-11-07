@@ -13,13 +13,18 @@ USER 0
 # UI fonts are not in a minimal Fedora, and the client hangs without them.
 # Steam and the games it runs through Proton are X11 programs, so this
 # image, and only this one, carries Xwayland. xprop is how the launcher
-# talks to gamescope.
-RUN REL=$(rpm -E %fedora); grep -qi rawhide /etc/fedora-release && REL=rawhide; \
-    dnf -y install \
-      "https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$REL.noarch.rpm" \
+# talks to gamescope. The nonfree release package is pinned as in the base.
+COPY pins /tmp/pins
+RUN REL=$(rpm -E %fedora); mkdir /tmp/rpms && cd /tmp/rpms \
+    && { grep -q "^$REL " /tmp/pins || { echo "steam/pins has nothing for Fedora $REL: add its RPM Fusion nonfree line" >&2; exit 1; }; } \
+    && grep "^$REL " /tmp/pins | while read -r _ sum url; do \
+         curl -fsSL -o "${url##*/}" "$url" && echo "$sum  ${url##*/}" | sha256sum -c --quiet \
+           || { echo "$url: not downloaded, or its sha256 is not the one in steam/pins" >&2; exit 1; }; \
+       done \
+    && dnf -y install ./rpmfusion-nonfree-release-*.rpm \
     && dnf -y install steam gamescope xorg-x11-server-Xwayland xprop \
       util-linux pciutils dejavu-sans-fonts liberation-sans-fonts \
-    && dnf clean all
+    && dnf clean all && rm -rf /tmp/rpms /tmp/pins
 
 # Same reason as in the base image; gamescope ships CAP_SYS_NICE.
 RUN getcap -r /usr 2>/dev/null | cut -d' ' -f1 | xargs -r -n1 setcap -r
