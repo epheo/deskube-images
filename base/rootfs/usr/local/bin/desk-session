@@ -123,6 +123,18 @@ case $WEB_UI in
   *) echo "desk-session: DESKUBE_WEB_UI_ALLOWED=$WEB_UI is not pc, lan or wan, using lan"; WEB_UI=lan ;;
 esac
 
+# A command line is readable by every user of the node, so the password
+# goes on none: Sunshine gets the file its --creds would write. Its hash
+# is sha256(password salt), bytes last to first, in upper case hex.
+# Without a password the web UI asks for one, and keeps it in the home.
+CREDS_FILE=$CONF_DIR/sunshine_state.json
+if [ -n "$ADMIN_PASSWORD" ]; then
+  CREDS_FILE=$XDG_RUNTIME_DIR/sunshine-credentials.json
+  SALT=$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')
+  HASH=$(printf %s%s "$ADMIN_PASSWORD" "$SALT" | sha256sum | cut -c1-64 | fold -w2 | tac | tr -d '\n' | tr a-f A-F)
+  (umask 077 && printf '{"username": "admin", "salt": "%s", "password": "%s"}\n' "$SALT" "$HASH" > "$CREDS_FILE")
+fi
+
 # The image owns the app list. Sunshine's stock one adds "Low Res Desktop"
 # and "Steam Big Picture", whose prep commands abort the launch here.
 cp /etc/deskube/apps.json "$CONF_DIR/apps.json"
@@ -141,12 +153,9 @@ gamepad = ${DESKUBE_GAMEPAD:-xone}
 global_prep_cmd = [{"do":"sh -c \"deskube-resize || true\"","undo":"sh -c \"deskube-resize reset || true\""}]
 min_log_level = ${DESKUBE_LOG_LEVEL:-info}
 file_state = $CONF_DIR/sunshine_state.json
-credentials_file = $CONF_DIR/sunshine_state.json
+credentials_file = $CREDS_FILE
 log_path = $CONF_DIR/sunshine.log
 CONF
-if [ -n "$ADMIN_PASSWORD" ]; then
-  sunshine "$CONF_DIR/sunshine.conf" --creds admin "$ADMIN_PASSWORD" > /dev/null 2>&1
-fi
 # uinput devices are global to the kernel and would land on the node.
 # The shim keeps input inside this session; DESKUBE_INPUT=off disables it.
 SHIM=/usr/lib64/libdeskube-uinput.so
