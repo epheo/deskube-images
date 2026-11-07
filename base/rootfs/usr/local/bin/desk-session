@@ -11,8 +11,47 @@ if ! whoami > /dev/null 2>&1 && [ -w /etc/passwd ]; then
 fi
 export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/tmp/run-$(id -u)}
 mkdir -p "$XDG_RUNTIME_DIR" && chmod 700 "$XDG_RUNTIME_DIR"
+
+# On pod stop tini passes SIGTERM to this script alone, and the pod is
+# killed 10 s later. Apps and Sunshine get it first, while the
+# compositor, audio and bus they talk to still run; then those.
+KEEP=""
+stop() {
+  trap '' TERM INT
+  APPS=""
+  for p in $(ps -e -o pid=); do
+    case " 1 $$ $KEEP " in *" $p "*) continue ;; esac
+    kill -TERM "$p" 2> /dev/null && APPS="$APPS,$p"
+  done
+  echo "desk-session: stopping, SIGTERM to $(printf %s "$APPS" | tr -cd , | wc -c) processes"
+  settle "$APPS" 60
+  kill -TERM $KEEP 2> /dev/null
+  settle "$(echo $KEEP | tr ' ' ,)" 20
+  exit 0
+}
+# Waits up to $2 tenths of a second for the processes listed in $1.
+# A child of this script stays a zombie until it is waited for.
+settle() {
+  for _ in $(seq 1 "$2"); do
+    ps -o stat= -p "${1#,}" 2> /dev/null | grep -qv Z || return 0
+    sleep 0.1
+  done
+  echo "desk-session: still running after $(($2 / 10)) s:" $(ps -o comm= -p "${1#,}")
+}
+trap stop TERM INT
+
+# Not dbus-run-session: it would stand between tini and this script,
+# and it dies on SIGTERM without passing it on.
 if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]; then
-  exec dbus-run-session -- "$0" "$@"
+  dbus-daemon --session --nofork --nopidfile --print-address > "$XDG_RUNTIME_DIR/bus.address" &
+  KEEP="$KEEP $!"
+  for _ in $(seq 1 50); do
+    [ -s "$XDG_RUNTIME_DIR/bus.address" ] && break
+    sleep 0.1
+  done
+  DBUS_SESSION_BUS_ADDRESS=$(cat "$XDG_RUNTIME_DIR/bus.address")
+  [ -n "$DBUS_SESSION_BUS_ADDRESS" ] || { echo "desk-session: the session bus did not start"; exit 1; }
+  export DBUS_SESSION_BUS_ADDRESS
 fi
 
 PORT=${DESKUBE_PORT:-47989}
@@ -22,9 +61,12 @@ CONF_DIR=$HOME/.config/sunshine
 mkdir -p "$CONF_DIR"
 
 pipewire &
+KEEP="$KEEP $!"
 sleep 1
 wireplumber &
+KEEP="$KEEP $!"
 pipewire-pulse &
+KEEP="$KEEP $!"
 
 # wlroots headless backend: no seat, no KMS. With a render node the
 # GPU draws and encodes; without one the CPU does both. Sunshine's wlr
@@ -43,6 +85,7 @@ fi
 export XDG_CURRENT_DESKTOP=sway XDG_SESSION_TYPE=wayland
 sway -c /etc/deskube/sway.config > "$XDG_RUNTIME_DIR/sway.log" 2>&1 &
 SWAY_PID=$!
+KEEP="$KEEP $SWAY_PID"
 for _ in $(seq 1 50); do
   WL=$(ls "$XDG_RUNTIME_DIR" 2>/dev/null | grep -E '^wayland-[0-9]+$' | head -1)
   [ -n "$WL" ] && break

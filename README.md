@@ -98,6 +98,11 @@ What bit:
   release instead.
 - Without a reaping PID 1 the desktop collects zombies; the image runs
   tini.
+- tini passes SIGTERM to its child alone. That was dbus-run-session,
+  which dies on it and passes nothing on, so a stopped pod killed its
+  apps without asking. The session script starts the bus itself and,
+  on SIGTERM, stops the apps and Sunshine first, then the compositor,
+  audio and bus, within the pod's 10 seconds.
 
 ## Input
 
