@@ -764,6 +764,12 @@ static int open_uinput(int flags)
 	return -1;
 }
 
+/* O_TMPFILE includes O_DIRECTORY: a plain & would read a mode nobody passed. */
+static bool takes_mode(int flags)
+{
+	return (flags & O_CREAT) || (flags & O_TMPFILE) == O_TMPFILE;
+}
+
 EXPORT int access(const char *path, int mode)
 {
 	resolve();
@@ -778,7 +784,7 @@ EXPORT int open(const char *path, int flags, ...)
 	resolve();
 	if (!strcmp(path, UINPUT_PATH))
 		return open_uinput(flags);
-	if (flags & (O_CREAT | O_TMPFILE)) {
+	if (takes_mode(flags)) {
 		va_list ap;
 		va_start(ap, flags);
 		mode = va_arg(ap, mode_t);
@@ -793,7 +799,7 @@ EXPORT int open64(const char *path, int flags, ...)
 	resolve();
 	if (!strcmp(path, UINPUT_PATH))
 		return open_uinput(flags);
-	if (flags & (O_CREAT | O_TMPFILE)) {
+	if (takes_mode(flags)) {
 		va_list ap;
 		va_start(ap, flags);
 		mode = va_arg(ap, mode_t);
