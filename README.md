@@ -16,6 +16,9 @@ images by name; everything about building and proving them is here.
 Rules: the newest Fedora release, not a pinned one; Wayland only, no
 Xorg (Xwayland only inside gamescope); no file capabilities, no
 privilege the pod does not need. `make help` lists the targets.
+What comes from outside Fedora is pinned by sha256 per Fedora release
+in `base/pins` and `steam/pins`: when `fedora:latest` moves on, the
+build stops until the new release's lines are there.
 
     make desktop moonlight-cli       # desktop builds base first
     hack/run.sh deskpod 48989        # rootless, only /dev/dri/renderD128 passed in

@@ -21,23 +21,28 @@ RUN for p in virtual-keyboard-unstable-v1 wlr-virtual-pointer-unstable-v1; do \
 
 FROM registry.fedoraproject.org/fedora:${FEDORA}
 
-ARG SUNSHINE_VERSION=2026.914.233613
-
 # Fedora's Mesa ships VAAPI without H.264 and HEVC; the freeworld build
 # from RPM Fusion adds them. AV1 encode works either way on RDNA 3.5.
 # The desktop is Wayland only: sway would pull Xwayland in as a weak
-# dependency. Rawhide has its own RPM Fusion release package.
-RUN REL=$(rpm -E %fedora); grep -qi rawhide /etc/fedora-release && REL=rawhide; \
-    dnf -y install \
-      "https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$REL.noarch.rpm" \
+# dependency. dnf checks no signature on a file it is handed, and RPM
+# Fusion's release package carries the key that checks the rest: both
+# downloads are pinned by sha256 in pins, per Fedora release.
+COPY pins /tmp/pins
+RUN REL=$(rpm -E %fedora); mkdir /tmp/rpms && cd /tmp/rpms \
+    && { grep -q "^$REL " /tmp/pins || { echo "base/pins has nothing for Fedora $REL: add its Sunshine and RPM Fusion lines, or build with --build-arg FEDORA=<a release it has>" >&2; exit 1; }; } \
+    && grep "^$REL " /tmp/pins | while read -r _ sum url; do \
+         curl -fsSL -o "${url##*/}" "$url" && echo "$sum  ${url##*/}" | sha256sum -c --quiet \
+           || { echo "$url: not downloaded, or its sha256 is not the one in base/pins" >&2; exit 1; }; \
+       done \
+    && dnf -y install ./rpmfusion-free-release-*.rpm \
     && dnf -y install --exclude=xorg-x11-server-Xwayland \
       sway swaybg \
       mesa-dri-drivers mesa-vulkan-drivers mesa-va-drivers-freeworld libva-utils vulkan-tools \
       pipewire pipewire-pulseaudio wireplumber pulseaudio-utils dbus-daemon \
       procps-ng iproute libcap shadow-utils tini grim glibc-langpack-en \
       xdg-desktop-portal xdg-desktop-portal-wlr \
-      "https://github.com/LizardByte/Sunshine/releases/download/v${SUNSHINE_VERSION}/Sunshine-${SUNSHINE_VERSION}-1.fc$(rpm -E %fedora).x86_64.rpm" \
-    && dnf clean all
+      ./Sunshine-*.rpm \
+    && dnf clean all && rm -rf /tmp/rpms /tmp/pins
 
 # Packages grant file capabilities (Sunshine CAP_SYS_ADMIN for KMS, sway
 # CAP_SYS_NICE). An unprivileged pod cannot hold them, and exec of such
