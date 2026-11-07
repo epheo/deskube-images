@@ -91,7 +91,7 @@ struct device {
 	bool has_hires[2];
 
 	/* A socket pad: its number, axis ranges, and events since the last SYN_REPORT. */
-	int pad_sock, pad_hold; /* 0 when unused: the slot is zeroed */
+	int pad_sock, pad_hold; /* -1 when unused */
 	uint16_t pad_id;
 	int naxes;
 	struct { uint16_t code; int32_t min, max; } axes[PAD_AXES];
@@ -374,7 +374,7 @@ static void send_pad(struct device *dev, uint8_t kind)
 	size_t n = 0;
 	struct sockaddr_un to = {.sun_family = AF_UNIX};
 
-	if (!path || dev->pad_sock <= 0)
+	if (!path || dev->pad_sock < 0)
 		return;
 	snprintf(to.sun_path, sizeof(to.sun_path), "%s", path);
 	uint32_t magic = PAD_MAGIC;
@@ -459,10 +459,8 @@ static int create_socket_pad(struct device *dev)
 	real_close(hold[0]);
 	dev->pad_hold = hold[1];
 	dev->pad_sock = socket(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
-	if (dev->pad_sock < 0) {
-		dev->pad_sock = 0;
+	if (dev->pad_sock < 0)
 		return -1;
-	}
 	dev->pad_id = (uint16_t)++next_sysname;
 	keep_axes(dev);
 	dev->created = true;
@@ -551,14 +549,14 @@ static int create_device(struct device *dev)
 
 static void destroy_device(struct device *dev)
 {
-	if (dev->pad_sock > 0) {
+	if (dev->pad_sock >= 0) {
 		send_pad(dev, PAD_GONE);
 		real_close(dev->pad_sock);
-		dev->pad_sock = 0;
+		dev->pad_sock = -1;
 	}
-	if (dev->pad_hold > 0) {
+	if (dev->pad_hold >= 0) {
 		real_close(dev->pad_hold);
-		dev->pad_hold = 0;
+		dev->pad_hold = -1;
 	}
 	if (dev->keyboard)
 		zwp_virtual_keyboard_v1_destroy(dev->keyboard);
@@ -785,6 +783,7 @@ static int open_uinput(int flags)
 		memset(&devices[i], 0, sizeof(devices[i]));
 		devices[i].fd = fd;
 		devices[i].open_flags = flags;
+		devices[i].pad_sock = devices[i].pad_hold = -1;
 		__atomic_store_n(&holders[i], holder(fd), __ATOMIC_RELAXED);
 		pthread_mutex_unlock(&lock);
 		return fd;
