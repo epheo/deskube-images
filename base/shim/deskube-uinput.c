@@ -73,7 +73,7 @@ struct device {
 	bool created;
 	bool passthrough; /* fd is the kernel's uinput now, every call goes there */
 	enum kind kind;
-	char name[UINPUT_MAX_NAME_SIZE];
+	char name[UINPUT_MAX_NAME_SIZE + 1];
 	bool has_key_a, has_btn_left, has_btn_south, has_rel_x, has_abs_x, has_multitouch, has_touch_or_pen;
 	struct call *calls;
 	int ncalls, calls_cap;
@@ -586,7 +586,8 @@ static int device_ioctl(struct device *dev, unsigned long request, void *arg)
 	}
 	if (request == UI_DEV_SETUP) {
 		const struct uinput_setup *setup = arg;
-		snprintf(dev->name, sizeof(dev->name), "%s", setup->name);
+		/* The kernel does not require setup->name to be terminated. */
+		snprintf(dev->name, sizeof(dev->name), "%.*s", (int)sizeof(setup->name), setup->name);
 		return 0;
 	}
 	if (request == UI_ABS_SETUP) {
