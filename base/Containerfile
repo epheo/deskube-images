@@ -13,7 +13,8 @@ RUN for p in virtual-keyboard-unstable-v1 wlr-virtual-pointer-unstable-v1; do \
       wayland-scanner client-header protocol/$p.xml $p-client-protocol.h && \
       wayland-scanner private-code protocol/$p.xml $p-protocol.c || exit 1; \
     done \
-    && gcc -O2 -Wall -Wextra -fPIC -shared -fvisibility=hidden -o libdeskube-uinput.so \
+    && gcc -O2 -Wall -Wextra -Werror -D_FORTIFY_SOURCE=3 -fstack-protector-strong -Wl,-z,relro,-z,now \
+         -fPIC -shared -fvisibility=hidden -o libdeskube-uinput.so \
          deskube-uinput.c virtual-keyboard-unstable-v1-protocol.c wlr-virtual-pointer-unstable-v1-protocol.c \
          -lwayland-client -lxkbcommon -lm -ldl -lpthread \
     && gcc -O2 -Wall -o uinput-test uinput-test.c $(pkg-config --cflags --libs libevdev)
