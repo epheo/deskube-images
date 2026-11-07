@@ -6,9 +6,10 @@
  *
  *     LD_PRELOAD=/usr/lib64/libdeskube-uinput.so uinput-test 'touch /tmp/typed'
  *
- * "uinput-test --pad [rounds]" creates a gamepad instead, which the shim hands
- * to the kernel. It only clicks the right stick and nudges it: the
- * device is real and visible to the whole node while the test runs.
+ * "uinput-test --pad [rounds]" creates a gamepad instead and only clicks
+ * the right stick and nudges it. With the real /dev/uinput passed in,
+ * the shim hands it to the kernel: it is then visible to the whole node
+ * while the test runs. Without it, it becomes a socket pad.
  */
 #include <fcntl.h>
 #include <stdio.h>

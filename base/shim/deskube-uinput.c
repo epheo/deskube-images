@@ -360,12 +360,13 @@ static const char *pad_path(void)
 
 /*
  * One datagram per batch, to whoever bound the pad socket:
- *   u32 magic, u16 version 1, u16 pad, u8 kind, u8 naxes, u16 nevents,
+ *   u32 magic, u16 version 1, u16 pad, u8 kind, u8 naxes, u16 nevents, u32 0,
  *   naxes x {u16 code, u16 0, i32 min, i32 max},
  *   nevents x {u16 type, u16 code, i32 value}, little endian.
  * Every batch carries the ranges, so a game that starts or restarts
  * mid stream reads the pad from its next move. Nobody listening, or a
- * full queue, drops the batch: a pad is state, the next one catches up.
+ * full queue, drops the batch: an axis catches up when it next moves,
+ * a button press or release in it is lost.
  */
 static void send_pad(struct device *dev, uint8_t kind)
 {
