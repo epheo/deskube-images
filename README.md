@@ -98,6 +98,13 @@ What bit:
   release instead.
 - Without a reaping PID 1 the desktop collects zombies; the image runs
   tini.
+- Sunshine reports busy while an app runs, not while a client watches
+  it, and Moonlight leaves the app running when the user closes it: a
+  desktop stayed busy for weeks and the operator's idle timeout never
+  came. The session reads clients come and go in Sunshine's log and
+  closes the app through the admin API once none was connected for
+  `DESKUBE_DISCONNECT_GRACE` seconds (300; 0 keeps it).
+  `QUIT=0 hack/e2e.sh` disconnects without quitting.
 - tini passes SIGTERM to its child alone. That was dbus-run-session,
   which dies on it and passes nothing on, so a stopped pod killed its
   apps without asking. The session script starts the bus itself and,

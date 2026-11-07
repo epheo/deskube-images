@@ -134,6 +134,11 @@ if [ -n "$ADMIN_PASSWORD" ]; then
   HASH=$(printf %s%s "$ADMIN_PASSWORD" "$SALT" | sha256sum | cut -c1-64 | fold -w2 | tac | tr -d '\n' | tr a-f A-F)
   (umask 077 && printf '{"username": "admin", "salt": "%s", "password": "%s"}\n' "$SALT" "$HASH" > "$CREDS_FILE")
 fi
+# Closing an idle app needs the admin API.
+CREDS=$XDG_RUNTIME_DIR/sunshine-admin.curl
+rm -f "$CREDS"
+[ -n "$ADMIN_PASSWORD" ] && (umask 077 && printf 'user = "admin:%s"\n' "$(printf %s "$ADMIN_PASSWORD" | sed 's/[\\"]/\\&/g')" > "$CREDS")
+unset ADMIN_PASSWORD
 
 # The image owns the app list. Sunshine's stock one adds "Low Res Desktop"
 # and "Steam Big Picture", whose prep commands abort the launch here.
@@ -156,6 +161,50 @@ file_state = $CONF_DIR/sunshine_state.json
 credentials_file = $CREDS_FILE
 log_path = $CONF_DIR/sunshine.log
 CONF
+
+# Sunshine is busy while an app runs, not while a client watches it, and
+# Moonlight leaves the app running when its window is closed: an idle
+# timeout that reads /serverinfo never fires. The session closes the app
+# once no client has been connected for this many seconds.
+GRACE=${DESKUBE_DISCONNECT_GRACE:-300}
+case $GRACE in
+  ''|*[!0-9]*) echo "desk-session: DESKUBE_DISCONNECT_GRACE=$GRACE is not a number of seconds, using 300"; GRACE=300 ;;
+esac
+if [ "$GRACE" -gt 0 ] && [ ! -s "$CREDS" ]; then
+  echo "desk-session: no admin password, apps stay open after their clients leave"
+  GRACE=0
+fi
+case ${DESKUBE_LOG_LEVEL:-info} in
+  verbose|debug|info|0|1|2) ;;
+  *)
+    [ "$GRACE" -gt 0 ] && echo "desk-session: log level above info hides clients, apps stay open after they leave"
+    GRACE=0 ;;
+esac
+# Only Sunshine's log shows clients come and go: a session starts with one
+# line and ends with a disconnect or a ping timeout. Each Sunshine starts
+# a new log.
+watch_clients() {
+  { tail -n +1 -F --pid="$1" "$CONF_DIR/sunshine.log" 2> /dev/null &
+    while kill -0 "$1" 2> /dev/null; do echo tick; sleep 5; done; } |
+  { clients=0; since=$(date +%s)
+    while IFS= read -r line; do
+      case $line in
+        *"New streaming session started"*) clients=$((clients + 1)) ;;
+        *"CLIENT DISCONNECTED"*|*": Ping Timeout"*)
+          [ "$clients" -gt 0 ] && clients=$((clients - 1))
+          since=$(date +%s) ;;
+        *"Process terminated"*) clients=0 ;;
+        tick)
+          if [ "$clients" -gt 0 ] || ! curl -s -m 2 "http://127.0.0.1:$PORT/serverinfo" | grep -q SUNSHINE_SERVER_BUSY; then
+            since=$(date +%s)
+          elif [ $(($(date +%s) - since)) -gt "$GRACE" ]; then
+            echo "desk-session: no client for $GRACE s, closing the app: HTTP" \
+              "$(curl -sk -K "$CREDS" -X POST -o /dev/null -w '%{http_code}' "https://127.0.0.1:$WEB/api/apps/close")"
+            since=$(date +%s)
+          fi ;;
+      esac
+    done; }
+}
 # uinput devices are global to the kernel and would land on the node.
 # The shim keeps input inside this session; DESKUBE_INPUT=off disables it.
 SHIM=/usr/lib64/libdeskube-uinput.so
@@ -178,6 +227,9 @@ while kill -0 "$SWAY_PID" 2> /dev/null; do
       fi
       sleep 1
     done
+    [ -s "$CREDS" ] && [ "$(curl -sk -K "$CREDS" -o /dev/null -w '%{http_code}' "https://127.0.0.1:$WEB/api/config")" != 200 ] \
+      && echo "desk-session: Sunshine refuses the admin password"
+    [ "$GRACE" -gt 0 ] && watch_clients "$PID"
   ) &
   WATCH=$!
   wait "$PID"

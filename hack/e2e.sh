@@ -5,6 +5,7 @@
 # PAD=/dev/input/eventN makes the client send that gamepad instead of
 # only watching; PAD_MAPPING is its SDL mapping line.
 # MOONLIGHT=<image> streams with another build of moonlight-cli.
+# QUIT=0 leaves the app running, as a user who closes Moonlight does.
 set -euo pipefail
 cd "$(dirname "$0")"
 NAME=${1:-deskpod}; PORT=${2:-48989}
@@ -41,7 +42,10 @@ timeout "$SECS" podman run --rm --network host -v "$CACHE:/root/.cache/moonlight
   -oL -eL moonlight stream -port "$PORT" -platform fake "${INPUT_ARGS[@]}" -app "${APP:-Desktop}" \
   -width "${SIZE%x*}" -height "${SIZE#*x}" -fps "$FPS" -bitrate "${BITRATE:-20000}" -codec "$CODEC" -verbose "$HOST" \
   > "$WORK/stream.log" 2>&1 || true
-timeout 20 podman run --rm --network host -v "$CACHE:/root/.cache/moonlight:Z" -i "$MOONLIGHT" quit -port "$PORT" "$HOST" > /dev/null 2>&1 || true
+[ "${QUIT:-1}" = 0 ] || timeout 20 podman run --rm --network host -v "$CACHE:/root/.cache/moonlight:Z" -i "$MOONLIGHT" quit -port "$PORT" "$HOST" > /dev/null 2>&1 || true
+# podman run can return before the client's last lines are written;
+# the quit above used to hide that.
+for _ in $(seq 1 20); do grep -q "Video frames received" "$WORK/stream.log" && break; sleep 0.5; done
 grep -E "Stream |first audio packet|Video frames|rror" "$WORK/stream.log" || true
 echo "logs in $WORK"
 # The first packet proves little: a capture that restarts on every frame
