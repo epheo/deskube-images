@@ -67,8 +67,7 @@ struct call {
 };
 
 struct device {
-	int fd; /* 0 means the slot is free */
-	pid_t owner;
+	int fd;
 	int open_flags;
 	bool created;
 	bool passthrough; /* fd is the kernel's uinput now, every call goes there */
@@ -101,6 +100,8 @@ struct device {
 };
 
 static struct device devices[MAX_DEVICES];
+/* Who holds each slot, pid << 32 | fd, 0 when free. Read without the lock, see find(). */
+static uint64_t holders[MAX_DEVICES];
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 static int next_sysname;
 
@@ -136,8 +137,15 @@ static uint32_t now_ms(void)
 	return (uint32_t)(ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
 }
 
+static uint64_t holder(int fd)
+{
+	return (uint64_t)(uint32_t)getpid() << 32 | (uint32_t)fd;
+}
+
 /*
- * Lock free on purpose: write() and close() of the whole process pass here.
+ * Lock free on purpose: write() and close() of the whole process pass
+ * here, and a child forked while a thread held the lock would wait for
+ * it forever. A match only means: look again under the lock.
  *
  * A child forked to run a command inherits the descriptors and closes
  * them all before exec. It also shares our Wayland socket, so reacting
@@ -147,12 +155,34 @@ static uint32_t now_ms(void)
  */
 static struct device *find(int fd)
 {
-	if (fd <= 0)
+	uint64_t mine = 0;
+
+	if (fd < 0)
 		return NULL;
-	for (int i = 0; i < MAX_DEVICES; i++)
-		if (devices[i].fd == fd)
-			return devices[i].owner == getpid() ? &devices[i] : NULL;
+	for (int i = 0; i < MAX_DEVICES; i++) {
+		uint64_t held = __atomic_load_n(&holders[i], __ATOMIC_RELAXED);
+		if (!held || (uint32_t)held != (uint32_t)fd)
+			continue;
+		/* getpid() is a system call, paid only on a matching descriptor. */
+		if (!mine)
+			mine = holder(fd);
+		if (held == mine)
+			return &devices[i];
+	}
 	return NULL;
+}
+
+/* The device behind fd with the lock held, or NULL without it. */
+static struct device *lock_device(int fd)
+{
+	if (!find(fd))
+		return NULL;
+	pthread_mutex_lock(&lock);
+	/* Closed, or closed and opened again, since the first look. */
+	struct device *dev = find(fd);
+	if (!dev)
+		pthread_mutex_unlock(&lock);
+	return dev;
 }
 
 static void registry_global(void *data, struct wl_registry *registry, uint32_t name,
@@ -750,14 +780,14 @@ static int open_uinput(int flags)
 		return -1;
 	pthread_mutex_lock(&lock);
 	for (int i = 0; i < MAX_DEVICES; i++) {
-		if (devices[i].fd == 0) {
-			memset(&devices[i], 0, sizeof(devices[i]));
-			devices[i].owner = getpid();
-			devices[i].open_flags = flags;
-			devices[i].fd = fd;
-			pthread_mutex_unlock(&lock);
-			return fd;
-		}
+		if (holders[i])
+			continue;
+		memset(&devices[i], 0, sizeof(devices[i]));
+		devices[i].fd = fd;
+		devices[i].open_flags = flags;
+		__atomic_store_n(&holders[i], holder(fd), __ATOMIC_RELAXED);
+		pthread_mutex_unlock(&lock);
+		return fd;
 	}
 	pthread_mutex_unlock(&lock);
 	real_close(fd);
@@ -817,38 +847,41 @@ EXPORT int ioctl(int fd, unsigned long request, ...)
 	va_end(ap);
 
 	resolve();
-	struct device *dev = find(fd);
-	if (!dev || dev->passthrough)
-		return real_ioctl(fd, request, arg);
-	pthread_mutex_lock(&lock);
-	int ret = device_ioctl(dev, request, arg);
-	pthread_mutex_unlock(&lock);
-	return ret;
+	struct device *dev = lock_device(fd);
+	if (dev && !dev->passthrough) {
+		int ret = device_ioctl(dev, request, arg);
+		pthread_mutex_unlock(&lock);
+		return ret;
+	}
+	if (dev)
+		pthread_mutex_unlock(&lock);
+	return real_ioctl(fd, request, arg);
 }
 
 EXPORT ssize_t write(int fd, const void *buf, size_t count)
 {
 	resolve();
-	struct device *dev = find(fd);
-	if (!dev || dev->passthrough)
-		return real_write(fd, buf, count);
-	pthread_mutex_lock(&lock);
-	if (dev->created)
-		device_events(dev, buf, count / sizeof(struct input_event));
-	pthread_mutex_unlock(&lock);
-	return (ssize_t)count;
+	struct device *dev = lock_device(fd);
+	if (dev && !dev->passthrough) {
+		if (dev->created)
+			device_events(dev, buf, count / sizeof(struct input_event));
+		pthread_mutex_unlock(&lock);
+		return (ssize_t)count;
+	}
+	if (dev)
+		pthread_mutex_unlock(&lock);
+	return real_write(fd, buf, count);
 }
 
 EXPORT int close(int fd)
 {
 	resolve();
-	struct device *dev = find(fd);
+	struct device *dev = lock_device(fd);
 	if (dev) {
-		pthread_mutex_lock(&lock);
 		if (!dev->passthrough)
 			destroy_device(dev);
 		forget_calls(dev);
-		dev->fd = 0;
+		__atomic_store_n(&holders[dev - devices], 0, __ATOMIC_RELAXED);
 		pthread_mutex_unlock(&lock);
 	}
 	return real_close(fd);
