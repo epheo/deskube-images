@@ -23,7 +23,9 @@ privilege the pod does not need. `make help` lists the targets.
     CODEC=av1 SIZE=2560x1440 hack/e2e.sh deskpod 48989
 
 Sunshine web UI: https://<host>:48990, user admin, password in
-`hack/.rendered/deskpod-sunshine-admin-password`.
+`hack/.rendered/deskpod-sunshine-admin-password`. It answers private
+addresses only; `DESKUBE_WEB_UI_ALLOWED` is `pc`, `lan` (the default)
+or `wan`.
 
 ## The base image
 

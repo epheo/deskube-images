@@ -68,6 +68,13 @@ done
 # In a pod the client browses to the node, an address no interface here has.
 [ -n "${DESKUBE_HOST_IP:-}" ] && ORIGINS="$ORIGINS,https://$DESKUBE_HOST_IP:$WEB"
 [ -n "${DESKUBE_WEB_ORIGINS:-}" ] && ORIGINS="$ORIGINS,$DESKUBE_WEB_ORIGINS"
+# The web UI can add an app, and an app is a command run as this user:
+# by default it answers private addresses, not the internet.
+WEB_UI=${DESKUBE_WEB_UI_ALLOWED:-lan}
+case $WEB_UI in
+  pc|lan|wan) ;;
+  *) echo "desk-session: DESKUBE_WEB_UI_ALLOWED=$WEB_UI is not pc, lan or wan, using lan"; WEB_UI=lan ;;
+esac
 
 # The image owns the app list. Sunshine's stock one adds "Low Res Desktop"
 # and "Steam Big Picture", whose prep commands abort the launch here.
@@ -78,7 +85,7 @@ sunshine_name = $NAME
 file_apps = $CONF_DIR/apps.json
 port = $PORT
 address_family = ipv4
-origin_web_ui_allowed = wan
+origin_web_ui_allowed = $WEB_UI
 csrf_allowed_origins = $ORIGINS
 capture = $CAPTURE
 encoder = $ENCODER
