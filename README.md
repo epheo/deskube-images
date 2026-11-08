@@ -30,6 +30,11 @@ Sunshine web UI: https://<host>:48990, user admin, password in
 addresses only; `DESKUBE_WEB_UI_ALLOWED` is `pc`, `lan` (the default)
 or `wan`.
 
+The session reads the admin password from the file
+`DESKUBE_ADMIN_PASSWORD_FILE` names, so no environment holds it and
+`podman inspect` does not show it. A named file it cannot read stops
+the session. `DESKUBE_ADMIN_PASSWORD` is for older operators.
+
 ## The base image
 
 With the host's render node it draws and encodes on the GPU (wlroots

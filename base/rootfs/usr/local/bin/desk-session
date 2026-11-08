@@ -3,9 +3,17 @@
 # No systemd and no logind here, so everything is started by hand.
 set -u
 # Whatever this script starts inherits its environment, and no app needs
-# the admin password. Still readable by this UID: PID 1's environment.
-ADMIN_PASSWORD=${DESKUBE_ADMIN_PASSWORD:-}
-unset DESKUBE_ADMIN_PASSWORD
+# the admin password. As a file it is in no environment, PID 1's
+# included; this UID can still read the file.
+# DESKUBE_ADMIN_PASSWORD is for older operators.
+if [ -n "${DESKUBE_ADMIN_PASSWORD_FILE:-}" ]; then
+  # Without a password the web UI takes the first one anyone sets.
+  ADMIN_PASSWORD=$(cat "$DESKUBE_ADMIN_PASSWORD_FILE") && [ -n "$ADMIN_PASSWORD" ] \
+    || { echo "desk-session: no admin password in $DESKUBE_ADMIN_PASSWORD_FILE"; exit 1; }
+else
+  ADMIN_PASSWORD=${DESKUBE_ADMIN_PASSWORD:-}
+fi
+unset DESKUBE_ADMIN_PASSWORD DESKUBE_ADMIN_PASSWORD_FILE
 # OpenShift runs the image under a UID of its choosing, one /etc/passwd
 # does not know. Programs that look their user up then fail, so the
 # entry of the image's user is moved to that UID.
