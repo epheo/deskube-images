@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Runs a container desktop on this machine's GPU: ./run.sh [name] [base-port]
 # PROFILE=steam picks the gaming image and what Steam and gamescope need.
+# PRIMARY_NODE=1 passes only the GPU's primary node, for another image
+# whose gamescope needs it.
 # GAMEPADS=1 lets Sunshine create real gamepads, see below.
 # Host network keeps the Sunshine ports identical inside and outside,
 # which RTSP requires. NETWORK=<podman network> gives the desktop an
@@ -13,11 +15,14 @@ cd "$(dirname "$0")"
 NAME=${1:-deskpod}; PORT=${2:-48989}
 RENDER=${RENDER:-/dev/dri/renderD128}
 PROFILE_ARGS=()
+# See steam/Containerfile for the why of both.
+if [ "${PROFILE:-}" = steam ] || [ "${PRIMARY_NODE:-}" = 1 ]; then
+  CARD=$(basename "$(ls -d "/sys/class/drm/$(basename "$RENDER")/device/drm/card"* | head -1)")
+  PROFILE_ARGS=(--device "/dev/dri/$CARD")
+fi
 if [ "${PROFILE:-}" = steam ]; then
   IMAGE=${IMAGE:-ghcr.io/epheo/deskube-steam:${TAG:-main}}
-  # See steam/Containerfile for the why of both.
-  CARD=$(basename "$(ls -d "/sys/class/drm/$(basename "$RENDER")/device/drm/card"* | head -1)")
-  PROFILE_ARGS=(--security-opt unmask=ALL --device "/dev/dri/$CARD")
+  PROFILE_ARGS+=(--security-opt unmask=ALL)
 fi
 IMAGE=${IMAGE:-ghcr.io/epheo/deskube-desktop:${TAG:-main}}
 NET_ARGS=(--network host)
