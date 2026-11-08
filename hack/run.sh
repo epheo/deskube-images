@@ -17,6 +17,7 @@ RENDER=${RENDER:-/dev/dri/renderD128}
 PROFILE_ARGS=()
 # See steam/Containerfile for the why of both.
 if [ "${PROFILE:-}" = steam ] || [ "${PRIMARY_NODE:-}" = 1 ]; then
+  # shellcheck disable=SC2012
   CARD=$(basename "$(ls -d "/sys/class/drm/$(basename "$RENDER")/device/drm/card"* | head -1)")
   PROFILE_ARGS=(--device "/dev/dri/$CARD")
 fi
@@ -41,6 +42,7 @@ PASS_FILE=.rendered/$NAME-sunshine-admin-password
 [ -f "$PASS_FILE" ] || openssl rand -hex 12 > "$PASS_FILE"
 chmod 600 "$PASS_FILE"
 podman rm -f "$NAME" >/dev/null 2>&1 || true
+# shellcheck disable=SC2086
 podman run -d --name "$NAME" --hostname "$NAME" "${NET_ARGS[@]}" \
   --userns=keep-id --user 1000:1000 \
   --device "$RENDER" --security-opt label=disable --shm-size 1g \

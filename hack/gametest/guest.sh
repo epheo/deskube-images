@@ -1,9 +1,11 @@
 #!/bin/sh
 # Runs inside the desktop, started by check.sh.
-export XDG_RUNTIME_DIR=/tmp/run-$(id -u)
+XDG_RUNTIME_DIR=/tmp/run-$(id -u)
+# shellcheck disable=SC2010
 WAYLAND_DISPLAY=$(ls "$XDG_RUNTIME_DIR" | grep -E '^wayland-[0-9]+$' | head -1)
+# shellcheck disable=SC2012
 SWAYSOCK=$(ls "$XDG_RUNTIME_DIR"/sway-ipc.*.sock | head -1)
-export WAYLAND_DISPLAY SWAYSOCK
+export XDG_RUNTIME_DIR WAYLAND_DISPLAY SWAYSOCK
 FAIL=0
 if pgrep -x gamescope-wl >/dev/null; then
   echo "Steam's gamescope is running; the test's would land on the same workspace. Stop Steam first."
@@ -34,7 +36,7 @@ input_case wayland 1 "env SDL_VIDEODRIVER=wayland"
 input_case gamescope 2 "gamescope -f -W 1920 -H 1080 -w 1920 -h 1080 --"
 
 if [ -z "${SKIP_PROTON:-}" ]; then
-  mkdir -p ~/gametest && cd ~/gametest
+  mkdir -p ~/gametest && cd ~/gametest || exit 1
   [ -x umu/umu-run ] || curl -sL "https://github.com/Open-Wine-Components/umu-launcher/releases/download/$UMU_VERSION/umu-launcher-$UMU_VERSION-zipapp.tar" | tar x
   cp /tmp/d3d11test.exe . && rm -f d3d11test.out
   cat > run.sh <<'RUN'
