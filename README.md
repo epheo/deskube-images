@@ -22,11 +22,17 @@ build stops until the new release's lines are there.
 
 CI builds every image for each pull request and pushes them from main,
 tagged `main` and `sha-<first 7 characters of the commit>`.
+Each run also lints with `make lint`: shellcheck, hadolint, actionlint.
+And the new desktop streams to the new moonlight-cli through
+`hack/e2e.sh`, on the CPU: the runner has no GPU.
+Main pushes no desktop that fails it.
 Locally `make moonlight-cli` tags it `moonlight-cli`, the name the
 tests run.
 
     make desktop moonlight-cli       # desktop builds base first
+    make lint                        # the linters CI runs, in containers
     hack/run.sh deskpod 48989        # rootless, only /dev/dri/renderD128 passed in
+    RENDER=none hack/run.sh deskpod 48989   # no GPU: the CPU draws and encodes
     hack/e2e.sh deskpod 48989        # pair through the admin API, stream headless
     CODEC=av1 SIZE=2560x1440 hack/e2e.sh deskpod 48989
 

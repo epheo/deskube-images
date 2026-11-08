@@ -9,6 +9,8 @@ on:
 permissions:
   contents: read
   packages: write
+  # The desktop job polls this run's artifacts for the client.
+  actions: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -16,6 +18,11 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io/${{ github.repository_owner }}
+
+defaults:
+  run:
+    # Unlike the default shell, this one sets pipefail.
+    shell: bash
 
 jobs:
   lint:
@@ -47,6 +54,54 @@ jobs:
           TAG="sha-${GITHUB_SHA::7}"
           MOONLIGHT_CLI_IMG="$REGISTRY/deskube-moonlight-cli:sha-${GITHUB_SHA::7}"
           BUILD_FLAGS="--label org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY --label org.opencontainers.image.revision=$GITHUB_SHA"
+      # A pull request pushes nothing: the stream test takes the client
+      # from this run.
+      - name: Save moonlight-cli
+        if: matrix.targets == 'moonlight-cli'
+        run: podman save "$REGISTRY/deskube-moonlight-cli:sha-${GITHUB_SHA::7}" | zstd -T0 -q > moonlight-cli.tar.zst
+      - if: matrix.targets == 'moonlight-cli'
+        uses: actions/upload-artifact@v4
+        with:
+          name: moonlight-cli
+          path: moonlight-cli.tar.zst
+          compression-level: 0
+          retention-days: 1
+          overwrite: true
+      # Not needs: the desktop build would then start after the client's.
+      # The client builds in less time, so its artifact is there by now.
+      - name: Wait for moonlight-cli
+        if: contains(matrix.targets, 'desktop')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for _ in $(seq 1 60); do
+            n=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts?name=moonlight-cli" --jq .total_count || true)
+            [ "${n:-0}" -gt 0 ] && exit 0
+            sleep 20
+          done
+          echo "no moonlight-cli artifact after 20 minutes"
+          exit 1
+      - if: contains(matrix.targets, 'desktop')
+        uses: actions/download-artifact@v4
+        with:
+          name: moonlight-cli
+      # No GPU on the runner: this proves the CPU path, pairing, frames
+      # and input, not VAAPI. Before Push, so main pushes no desktop that
+      # does not stream.
+      - name: Stream without a GPU
+        if: contains(matrix.targets, 'desktop')
+        timeout-minutes: 10
+        run: |
+          zstd -dc moonlight-cli.tar.zst | podman load -q
+          rm moonlight-cli.tar.zst
+          RENDER=none IMAGE="$REGISTRY/deskube-desktop:sha-${GITHUB_SHA::7}" hack/run.sh ci 48989
+          WORK="$RUNNER_TEMP/e2e" MOONLIGHT="$REGISTRY/deskube-moonlight-cli:sha-${GITHUB_SHA::7}" hack/e2e.sh ci 48989
+      - name: Logs of the stream test
+        if: failure() && contains(matrix.targets, 'desktop')
+        run: |
+          podman logs ci || true
+          podman exec ci cat /home/desk/.config/sunshine/sunshine.log || true
+          tail -n 50 "$RUNNER_TEMP"/e2e/*.log || true
       # Pull requests build to prove the images still build, and push nothing.
       - name: Push
         if: github.event_name != 'pull_request'
