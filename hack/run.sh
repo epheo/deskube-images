@@ -34,13 +34,14 @@ fi
 mkdir -p .rendered
 PASS_FILE=.rendered/$NAME-sunshine-admin-password
 [ -f "$PASS_FILE" ] || openssl rand -hex 12 > "$PASS_FILE"
+chmod 600 "$PASS_FILE"
 podman rm -f "$NAME" >/dev/null 2>&1 || true
 podman run -d --name "$NAME" --hostname "$NAME" "${NET_ARGS[@]}" \
   --userns=keep-id --user 1000:1000 \
   --device "$RENDER" --security-opt label=disable --shm-size 1g \
   -v "$NAME-home:/home/desk" \
   -e DESKUBE_PORT="$PORT" -e DESKUBE_NAME="$NAME" \
-  -e DESKUBE_ADMIN_PASSWORD="$(cat "$PASS_FILE")" \
+  -v "$PWD/$PASS_FILE:/run/deskube/admin/password:ro" -e DESKUBE_ADMIN_PASSWORD_FILE=/run/deskube/admin/password \
   -e DESKUBE_ENCODER="${ENCODER:-vaapi}" -e DESKUBE_CAPTURE="${CAPTURE:-wlr}" \
   -e DESKUBE_RENDER_NODE="$RENDER" -e DESKUBE_KEYBOARD_LAYOUT="${LAYOUT:-us}" "${PROFILE_ARGS[@]}" ${EXTRA_ARGS:-} \
   "$IMAGE"
