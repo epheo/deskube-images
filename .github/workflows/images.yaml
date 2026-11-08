@@ -1,0 +1,62 @@
+name: images
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io/${{ github.repository_owner }}
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # desktop and steam sit on base: one job, one local image store.
+          - targets: base desktop steam
+            images: deskube-base deskube-desktop deskube-steam
+          - targets: moonlight-cli
+            images: deskube-moonlight-cli
+    steps:
+      - uses: actions/checkout@v4
+      # The runner's free disk does not hold three images and their build stages.
+      - run: sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
+      - name: Build
+        run: >-
+          make ${{ matrix.targets }}
+          TAG=sha-${GITHUB_SHA::7}
+          MOONLIGHT_CLI_IMG=$REGISTRY/deskube-moonlight-cli:sha-${GITHUB_SHA::7}
+          BUILD_FLAGS="--label org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY --label org.opencontainers.image.revision=$GITHUB_SHA"
+      # Pull requests build to prove the images still build, and push nothing.
+      - name: Push
+        if: github.event_name != 'pull_request'
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGES: ${{ matrix.images }}
+        run: |
+          echo "$TOKEN" | podman login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          SHA=sha-${GITHUB_SHA::7}
+          case "$GITHUB_REF" in
+            refs/heads/main) MOVING=main ;;
+            refs/tags/v*) MOVING=${GITHUB_REF_NAME#v} ;;
+          esac
+          for n in $IMAGES; do
+            img=$REGISTRY/$n
+            podman push --digestfile digest "$img:$SHA"
+            podman tag "$img:$SHA" "$img:$MOVING"
+            podman push "$img:$MOVING"
+            echo "$img@$(cat digest)" >> "$GITHUB_STEP_SUMMARY"
+          done

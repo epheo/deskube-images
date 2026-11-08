@@ -7,6 +7,9 @@ TAG ?= main
 BASE_IMG ?= $(REGISTRY)/deskube-base:$(TAG)
 DESKTOP_IMG ?= $(REGISTRY)/deskube-desktop:$(TAG)
 STEAM_IMG ?= $(REGISTRY)/deskube-steam:$(TAG)
+MOONLIGHT_CLI_IMG ?= moonlight-cli
+# CI adds labels here, such as the source repository ghcr links a package to.
+BUILD_FLAGS ?=
 
 .PHONY: help
 help: ## Show this help.
@@ -14,19 +17,19 @@ help: ## Show this help.
 
 .PHONY: base
 base: ## Build the base image: compositor, Sunshine, the shim, nothing to reach.
-	$(CONTAINER_TOOL) build -t $(BASE_IMG) base
+	$(CONTAINER_TOOL) build $(BUILD_FLAGS) -t $(BASE_IMG) base
 
 .PHONY: desktop
 desktop: base ## Build the desktop image: sway with its keys, a terminal, Chromium.
-	$(CONTAINER_TOOL) build -t $(DESKTOP_IMG) --build-arg BASE=$(BASE_IMG) desktop
+	$(CONTAINER_TOOL) build $(BUILD_FLAGS) -t $(DESKTOP_IMG) --build-arg BASE=$(BASE_IMG) desktop
 
 .PHONY: steam
 steam: base ## Build the Steam image on the base image.
-	$(CONTAINER_TOOL) build -t $(STEAM_IMG) --build-arg BASE=$(BASE_IMG) steam
+	$(CONTAINER_TOOL) build $(BUILD_FLAGS) -t $(STEAM_IMG) --build-arg BASE=$(BASE_IMG) steam
 
 .PHONY: moonlight-cli
 moonlight-cli: ## Build the headless Moonlight client hack/e2e.sh streams with.
-	$(CONTAINER_TOOL) build -t moonlight-cli moonlight-cli
+	$(CONTAINER_TOOL) build $(BUILD_FLAGS) -t $(MOONLIGHT_CLI_IMG) moonlight-cli
 
 .PHONY: push
 push: ## Push the base, desktop and Steam images.

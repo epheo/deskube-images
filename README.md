@@ -10,7 +10,7 @@ images by name; everything about building and proving them is here.
 | `base/`              | `ghcr.io/epheo/deskube-base`             | sway, Sunshine, the input shim; nothing a user can reach |
 | `desktop/`           | `ghcr.io/epheo/deskube-desktop`          | base plus sway's usual keys, a terminal, a launcher, Chromium |
 | `steam/`             | `ghcr.io/epheo/deskube-steam`            | base plus Steam Big Picture in gamescope          |
-| `moonlight-cli/`     | `moonlight-cli`                          | headless Moonlight that counts frames, for tests  |
+| `moonlight-cli/`     | `ghcr.io/epheo/deskube-moonlight-cli`    | headless Moonlight that counts frames, for tests  |
 | `hack/`              |                                          | run an image with podman, stream to it, drive it  |
 
 Rules: the newest Fedora release, not a pinned one; Wayland only, no
@@ -19,6 +19,11 @@ privilege the pod does not need. `make help` lists the targets.
 What comes from outside Fedora is pinned by sha256 per Fedora release
 in `base/pins` and `steam/pins`: when `fedora:latest` moves on, the
 build stops until the new release's lines are there.
+
+CI builds every image for each pull request and pushes them from main,
+tagged `main` and `sha-<first 7 characters of the commit>`.
+Locally `make moonlight-cli` tags it `moonlight-cli`, the name the
+tests run.
 
     make desktop moonlight-cli       # desktop builds base first
     hack/run.sh deskpod 48989        # rootless, only /dev/dri/renderD128 passed in
@@ -168,14 +173,13 @@ while others remain; with the shim alone it cannot, since one keyboard
 gone removes the capability. Test tools that bring their own keyboard
 must keep it alive past the app's start (`hack/ptr`'s linger).
 
-## The games
+## Games
 
-`steam/` sits on base, so there is no desktop
-behind the game: the app list holds one entry, and the base's sway
-config leaves the keyboard nothing to reach. The compositor stays sway
-because it is 4 MiB of the image and the proven path for gamescope,
-Sunshine's capture and the input shim. cage, the wlroots kiosk, would
-give the same by construction (it has screencopy, virtual input and
+`steam/` sits on base, so there is no desktop behind the game: the app
+list holds one entry, and the base's sway config leaves the keyboard
+nothing to reach. The compositor stays sway because it is 4 MiB of the
+image and the proven path for gamescope, Sunshine's capture and the
+input shim. cage, the wlroots kiosk, would give the same by construction (it has screencopy, virtual input and
 output management) at the price of a second session path. gamescope
 alone as the compositor is out: Sunshine cannot capture it.
 
