@@ -9,6 +9,7 @@ LOG=${DESKUBE_RESIZE_LOG:-$HOME/.cache/deskube-resize.log}
 mkdir -p "$(dirname "$LOG")" 2>/dev/null
 log() { echo "$(date +%FT%T) $*" | tee -a "$LOG"; }
 # sway only exports its socket to its own children, Sunshine is not one.
+# shellcheck disable=SC2012
 : "${SWAYSOCK:=$(ls "${XDG_RUNTIME_DIR:-/tmp/run-$(id -u)}"/sway-ipc.*.sock 2>/dev/null | head -1)}"
 export SWAYSOCK
 

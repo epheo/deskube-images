@@ -21,13 +21,14 @@ if ! whoami > /dev/null 2>&1 && [ -w /etc/passwd ]; then
   { grep -v '^desk:' /etc/passwd; echo "desk:x:$(id -u):$(id -g)::$HOME:/bin/bash"; } > /tmp/passwd
   cat /tmp/passwd > /etc/passwd; rm -f /tmp/passwd
 fi
-export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/tmp/run-$(id -u)}
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp/run-$(id -u)}"
 mkdir -p "$XDG_RUNTIME_DIR" && chmod 700 "$XDG_RUNTIME_DIR"
 
 # On pod stop tini passes SIGTERM to this script alone, and the pod is
 # killed 10 s later. Apps and Sunshine get it first, while the
 # compositor, audio and bus they talk to still run; then those.
 KEEP=""
+# shellcheck disable=SC2329
 stop() {
   trap '' TERM INT
   APPS=""
@@ -37,17 +38,20 @@ stop() {
   done
   echo "desk-session: stopping, SIGTERM to $(printf %s "$APPS" | tr -cd , | wc -c) processes"
   settle "$APPS" 60
+  # shellcheck disable=SC2086
   kill -TERM $KEEP 2> /dev/null
-  settle "$(echo $KEEP | tr ' ' ,)" 20
+  settle "$(echo "$KEEP" | tr ' ' ,)" 20
   exit 0
 }
 # Waits up to $2 tenths of a second for the processes listed in $1.
 # A child of this script stays a zombie until it is waited for.
+# shellcheck disable=SC2329
 settle() {
   for _ in $(seq 1 "$2"); do
     ps -o stat= -p "${1#,}" 2> /dev/null | grep -qv Z || return 0
     sleep 0.1
   done
+  # shellcheck disable=SC2046 # one line of names
   echo "desk-session: still running after $(($2 / 10)) s:" $(ps -o comm= -p "${1#,}")
 }
 trap stop TERM INT
@@ -70,6 +74,7 @@ PORT=${DESKUBE_PORT:-47989}
 NAME=${DESKUBE_NAME:-$(uname -n)}
 # A device plugin hands over its GPU's own render node: renderD128 only
 # when that GPU is the node's first.
+# shellcheck disable=SC2012
 RENDER=${DESKUBE_RENDER_NODE:-$(ls /dev/dri/renderD* 2> /dev/null | head -1)}
 RENDER=${RENDER:-/dev/dri/renderD128}
 CONF_DIR=$HOME/.config/sunshine
@@ -89,7 +94,7 @@ KEEP="$KEEP $!"
 # screen cast portal, which hands over plain memory.
 export WLR_BACKENDS=headless WLR_LIBINPUT_NO_DEVICES=1
 if [ -e "$RENDER" ]; then
-  export WLR_RENDER_DRM_DEVICE=$RENDER
+  export WLR_RENDER_DRM_DEVICE="$RENDER"
   GPU_ENCODER=vaapi
   if [ "$(basename "$(readlink -f "/sys/class/drm/${RENDER##*/}/device/driver")")" = nvidia ]; then
     # The node's driver arrives through CDI. glvnd and the Vulkan loader
@@ -97,10 +102,10 @@ if [ -e "$RENDER" ]; then
     # device matching the node fails.
     export WLR_RENDERER=gles2
     for f in /usr/share/glvnd/egl_vendor.d/10_nvidia.json /etc/glvnd/egl_vendor.d/10_nvidia.json; do
-      if [ -e "$f" ]; then export __EGL_VENDOR_LIBRARY_FILENAMES=$f; fi
+      if [ -e "$f" ]; then export __EGL_VENDOR_LIBRARY_FILENAMES="$f"; fi
     done
     for f in /usr/share/vulkan/icd.d/nvidia_icd*.json /etc/vulkan/icd.d/nvidia_icd*.json; do
-      if [ -e "$f" ]; then export VK_DRIVER_FILES=$f; fi
+      if [ -e "$f" ]; then export VK_DRIVER_FILES="$f"; fi
     done
     GPU_ENCODER=nvenc
   fi
@@ -116,13 +121,15 @@ sway -c /etc/deskube/sway.config > "$XDG_RUNTIME_DIR/sway.log" 2>&1 &
 SWAY_PID=$!
 KEEP="$KEEP $SWAY_PID"
 for _ in $(seq 1 50); do
+  # shellcheck disable=SC2010
   WL=$(ls "$XDG_RUNTIME_DIR" 2>/dev/null | grep -E '^wayland-[0-9]+$' | head -1)
   [ -n "$WL" ] && break
   sleep 0.2
 done
 [ -n "${WL:-}" ] || { echo "compositor did not start"; cat "$XDG_RUNTIME_DIR/sway.log"; exit 1; }
-export WAYLAND_DISPLAY=$WL
+export WAYLAND_DISPLAY="$WL"
 # sway only exports its socket to its own children; deskube-resize needs it.
+# shellcheck disable=SC2012
 SWAYSOCK=$(ls "$XDG_RUNTIME_DIR"/sway-ipc.*.sock 2>/dev/null | head -1)
 export SWAYSOCK
 # The portal is started by the bus, which came up before the compositor
