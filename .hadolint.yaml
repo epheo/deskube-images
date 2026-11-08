@@ -1,0 +1,10 @@
+ignored:
+  # The images follow the newest Fedora release and its packages on
+  # purpose; what comes from elsewhere is pinned by sha256 in pins.
+  - DL3041
+  # Each cd works in a directory its own RUN removes; WORKDIR would stay
+  # in the image.
+  - DL3003
+  # podman ignores SHELL in its default OCI image format. The loops that
+  # must fail a build are the last command of their pipeline.
+  - DL4006

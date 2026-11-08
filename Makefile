@@ -10,6 +10,12 @@ STEAM_IMG ?= $(REGISTRY)/deskube-steam:$(TAG)
 MOONLIGHT_CLI_IMG ?= moonlight-cli
 # CI adds labels here, such as the source repository ghcr links a package to.
 BUILD_FLAGS ?=
+SHELLCHECK_IMG ?= docker.io/koalaman/shellcheck:v0.11.0
+HADOLINT_IMG ?= docker.io/hadolint/hadolint:v2.15.1
+ACTIONLINT_IMG ?= docker.io/rhysd/actionlint:1.7.12
+# Found by shebang: most scripts have no extension.
+SCRIPTS = $(shell git ls-files | xargs awk 'FNR == 1 && /^#!.*[\/ ](ba)?sh$$/ { print FILENAME }')
+LINT = $(CONTAINER_TOOL) run --rm --security-opt label=disable -v $(CURDIR):/src:ro -w /src
 
 .PHONY: help
 help: ## Show this help.
@@ -30,6 +36,12 @@ steam: base ## Build the Steam image on the base image.
 .PHONY: moonlight-cli
 moonlight-cli: ## Build the headless Moonlight client hack/e2e.sh streams with.
 	$(CONTAINER_TOOL) build $(BUILD_FLAGS) -t $(MOONLIGHT_CLI_IMG) moonlight-cli
+
+.PHONY: lint
+lint: ## Lint the shell scripts, the Containerfiles and the CI workflow.
+	$(LINT) $(SHELLCHECK_IMG) $(SCRIPTS)
+	$(LINT) $(HADOLINT_IMG) /bin/hadolint */Containerfile
+	$(LINT) $(ACTIONLINT_IMG)
 
 .PHONY: push
 push: ## Push the base, desktop and Steam images.
