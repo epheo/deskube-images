@@ -44,11 +44,16 @@ the session. `DESKUBE_ADMIN_PASSWORD` is for older operators.
 
 With the host's render node it draws and encodes on the GPU (wlroots
 capture, VAAPI). Without one it does both on the CPU (screen cast
-portal, libx264). Its sway config puts nothing on the output: no bar,
-no terminal, no bindings, a black background. An image that puts one
-app on it leaves a user nothing to reach but that app, and the stream
-is black until the app draws. The base is 1.36 GB: Mesa with LLVM
-0.42 GB, Sunshine with Qt 0.1 GB; sway and swaybg are 4 MiB.
+portal, libx264). It takes the first render node it is given, so a
+device plugin's GPU need not be renderD128. On an NVIDIA GPU, whose
+driver the node hands in through CDI, it renders with GLES2 on NVIDIA's
+EGL and Vulkan, not Mesa's, and encodes with NVENC; not yet run on an
+NVIDIA GPU, see the operator's `docs/gpu-nvidia.md`. Its sway config
+puts nothing on the output: no bar, no terminal, no bindings, a black
+background. An image that puts one app on it leaves a user nothing to
+reach but that app, and the stream is black until the app draws. The
+base is 1.36 GB: Mesa with LLVM 0.42 GB, Sunshine with Qt 0.1 GB; sway
+and swaybg are 4 MiB.
 
 Result 2026-10-05, Ryzen AI Max+ 395, Radeon 8060S, Fedora 44:
 

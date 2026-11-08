@@ -68,7 +68,10 @@ fi
 
 PORT=${DESKUBE_PORT:-47989}
 NAME=${DESKUBE_NAME:-$(uname -n)}
-RENDER=${DESKUBE_RENDER_NODE:-/dev/dri/renderD128}
+# A device plugin hands over its GPU's own render node: renderD128 only
+# when that GPU is the node's first.
+RENDER=${DESKUBE_RENDER_NODE:-$(ls /dev/dri/renderD* 2> /dev/null | head -1)}
+RENDER=${RENDER:-/dev/dri/renderD128}
 CONF_DIR=$HOME/.config/sunshine
 mkdir -p "$CONF_DIR"
 
@@ -87,7 +90,21 @@ KEEP="$KEEP $!"
 export WLR_BACKENDS=headless WLR_LIBINPUT_NO_DEVICES=1
 if [ -e "$RENDER" ]; then
   export WLR_RENDER_DRM_DEVICE=$RENDER
-  ENCODER=${DESKUBE_ENCODER:-vaapi}
+  GPU_ENCODER=vaapi
+  if [ "$(basename "$(readlink -f "/sys/class/drm/${RENDER##*/}/device/driver")")" = nvidia ]; then
+    # The node's driver arrives through CDI. glvnd and the Vulkan loader
+    # would also offer Mesa's, and wlroots gives up when the first EGL
+    # device matching the node fails.
+    export WLR_RENDERER=gles2
+    for f in /usr/share/glvnd/egl_vendor.d/10_nvidia.json /etc/glvnd/egl_vendor.d/10_nvidia.json; do
+      if [ -e "$f" ]; then export __EGL_VENDOR_LIBRARY_FILENAMES=$f; fi
+    done
+    for f in /usr/share/vulkan/icd.d/nvidia_icd*.json /etc/vulkan/icd.d/nvidia_icd*.json; do
+      if [ -e "$f" ]; then export VK_DRIVER_FILES=$f; fi
+    done
+    GPU_ENCODER=nvenc
+  fi
+  ENCODER=${DESKUBE_ENCODER:-$GPU_ENCODER}
   CAPTURE=${DESKUBE_CAPTURE:-wlr}
 else
   export WLR_RENDERER=pixman
