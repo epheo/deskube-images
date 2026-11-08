@@ -2,7 +2,7 @@
 # A release with no lines here stops the build: fedora:latest moved on.
 # Sunshine publishes a digest per asset on its GitHub release page.
 # RPM Fusion: the releases/ tree never changes; rawhide's moves when it branches.
-45 a46b83e8c8e6c8fc2e0601464b43e9c3fd2f67907a23b537ea64ff58ba4fadf3 https://github.com/LizardByte/Sunshine/releases/download/v2026.914.233613/Sunshine-2026.914.233613-1.fc45.x86_64.rpm
+45 7fd8e8ad9a36b46dbc141ec58b0a4552adc866cb09aced0c081cab6f5539319c https://github.com/LizardByte/Sunshine/releases/download/v2026.1107.185223/Sunshine-2026.1107.185223-1.fc45.x86_64.rpm
 45 761100efc44f57e16dadec1780582f725028e212593740e955dbc7d5b2de81bb https://download1.rpmfusion.org/free/fedora/releases/45/Everything/x86_64/os/Packages/r/rpmfusion-free-release-45-2.noarch.rpm
-46 451c6c1ccee6edaa8734f12cd3fb9b0ffe2ce3d21cfe2681c9e9fd8c17c859c1 https://github.com/LizardByte/Sunshine/releases/download/v2026.914.233613/Sunshine-2026.914.233613-1.fc46.x86_64.rpm
+46 cc5e2d29e163d73c7aa2a55d0d242202993d2638c18a806464a0d73a0115c42b https://github.com/LizardByte/Sunshine/releases/download/v2026.1107.185223/Sunshine-2026.1107.185223-1.fc46.x86_64.rpm
 46 9365a2240104c56efb81feaca1fdd0e9b36c93bb6dc1001dea0967261faf867e https://download1.rpmfusion.org/free/fedora/development/rawhide/Everything/x86_64/os/Packages/r/rpmfusion-free-release-46-0.2.noarch.rpm

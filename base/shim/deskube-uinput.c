@@ -23,6 +23,7 @@
 #include <dlfcn.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <poll.h>
 #include <pthread.h>
 #include <stdarg.h>
@@ -115,6 +116,9 @@ static struct xkb_keymap *xkb_map;
 
 static int (*real_open)(const char *, int, ...);
 static int (*real_open64)(const char *, int, ...);
+static int (*real_open64_2)(const char *, int);
+static int (*real_openat64_2)(int, const char *, int);
+static int (*real_execv)(const char *, char *const[]);
 static int (*real_access)(const char *, int);
 static int (*real_ioctl)(int, unsigned long, ...);
 static ssize_t (*real_write)(int, const void *, size_t);
@@ -747,6 +751,8 @@ static void device_events(struct device *dev, const struct input_event *ev, size
 	}
 }
 
+static char *own_preload;
+
 /*
  * Commands and apps the host launches must not inherit the preload: a
  * game that opens /dev/uinput for its own virtual controller would get
@@ -755,8 +761,10 @@ static void device_events(struct device *dev, const struct input_event *ev, size
 __attribute__((constructor)) static void drop_preload(void)
 {
 	const char *preload = getenv("LD_PRELOAD");
-	if (preload && strstr(preload, "libdeskube-uinput") && !strchr(preload, ':') && !strchr(preload, ' '))
+	if (preload && strstr(preload, "libdeskube-uinput") && !strchr(preload, ':') && !strchr(preload, ' ')) {
+		own_preload = strdup(preload);
 		unsetenv("LD_PRELOAD");
+	}
 }
 
 static void resolve(void)
@@ -765,6 +773,9 @@ static void resolve(void)
 		return;
 	real_open = dlsym(RTLD_NEXT, "open");
 	real_open64 = dlsym(RTLD_NEXT, "open64");
+	real_open64_2 = dlsym(RTLD_NEXT, "__open64_2");
+	real_openat64_2 = dlsym(RTLD_NEXT, "__openat64_2");
+	real_execv = dlsym(RTLD_NEXT, "execv");
 	real_access = dlsym(RTLD_NEXT, "access");
 	real_ioctl = dlsym(RTLD_NEXT, "ioctl");
 	real_close = dlsym(RTLD_NEXT, "close");
@@ -802,9 +813,11 @@ static bool takes_mode(int flags)
 }
 
 /*
- * Sunshine 2026.914 reaches /dev/uinput through access() and open(),
- * libevdev through open64(). No other library Sunshine loads names the
- * device, so openat() and the fortified __open_2() stay unhooked.
+ * Sunshine probes /dev/uinput with access() and opens it with open(),
+ * libevdev with open64().
+ * From 2026.1107 the binary also imports __open64_2() and __openat64_2(),
+ * what _FORTIFY_SOURCE makes of open() and openat() whose flags are only
+ * known at run time, as libvirtualhid's are.
  */
 EXPORT int access(const char *path, int mode)
 {
@@ -842,6 +855,45 @@ EXPORT int open64(const char *path, int flags, ...)
 		va_end(ap);
 	}
 	return real_open64(path, flags, mode);
+}
+
+EXPORT int __open64_2(const char *path, int flags)
+{
+	resolve();
+	if (!strcmp(path, UINPUT_PATH))
+		return open_uinput(flags);
+	return real_open64_2(path, flags);
+}
+
+EXPORT int __openat64_2(int dirfd, const char *path, int flags)
+{
+	resolve();
+	if (!strcmp(path, UINPUT_PATH))
+		return open_uinput(flags);
+	return real_openat64_2(dirfd, path, flags);
+}
+
+/*
+ * Sunshine restarts itself with execv() of its own binary, for one when
+ * it first gets a portal restore token. That image needs the preload
+ * back, or it starts with no input at all; nothing else it runs gets it.
+ */
+EXPORT int execv(const char *path, char *const argv[])
+{
+	char self[PATH_MAX];
+	bool restore = false;
+	resolve();
+	ssize_t n = readlink("/proc/self/exe", self, sizeof(self) - 1);
+	if (own_preload && n > 0) {
+		self[n] = '\0';
+		restore = !strcmp(path, self);
+	}
+	if (restore)
+		setenv("LD_PRELOAD", own_preload, 1);
+	int ret = real_execv(path, argv);
+	if (restore)
+		unsetenv("LD_PRELOAD");
+	return ret;
 }
 
 EXPORT int ioctl(int fd, unsigned long request, ...)
