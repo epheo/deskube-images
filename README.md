@@ -191,3 +191,7 @@ alone as the compositor is out: Sunshine cannot capture it.
   the real uinput inside.
 - A full desktop (Plasma with KWin capture) instead of sway. The shim
   speaks the wlroots protocols, KWin needs its own injection path.
+
+## License
+
+Apache 2.0, see LICENSE.
