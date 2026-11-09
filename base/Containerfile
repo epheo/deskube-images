@@ -62,7 +62,7 @@ ENV SDL_JOYSTICK_DISABLE_UDEV=1
 COPY rootfs/ /
 COPY --from=shim /shim/libdeskube-uinput.so /usr/lib64/libdeskube-uinput.so
 COPY --from=shim /shim/uinput-test /usr/libexec/deskube-uinput-test
-RUN chmod 0755 /usr/local/bin/desk-session /usr/local/bin/deskube-resize
+RUN chmod 0755 /usr/local/bin/desk-session /usr/local/bin/deskube-resize /usr/local/bin/deskube-app
 
 USER 1000
 WORKDIR /home/desk
