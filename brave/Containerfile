@@ -1,0 +1,20 @@
+# Brave alone on the output, from Brave's own repository. Its sandbox
+# needs user namespaces, which the launcher must allow as for Steam
+# (podman does; the operator's nestedSandboxes on a cluster).
+ARG BASE=ghcr.io/epheo/deskube-base:main
+FROM ${BASE}
+USER 0
+COPY pins /tmp/pins
+COPY rootfs/ /
+# A pod cannot use a setuid helper, and no image here carries privilege
+# it cannot use.
+RUN grep -v '^#' /tmp/pins | while read -r sum url; do \
+      curl -fsSL -o /etc/pki/rpm-gpg/RPM-GPG-KEY-brave "$url" \
+        && echo "$sum  /etc/pki/rpm-gpg/RPM-GPG-KEY-brave" | sha256sum -c --quiet \
+        || { echo "$url: not downloaded, or its sha256 is not the one in brave/pins" >&2; exit 1; }; \
+    done \
+    && dnf -y install --exclude=xorg-x11-server-Xwayland brave-browser && dnf clean all \
+    && find /opt/brave.com -perm -4000 -exec chmod u-s {} + \
+    && rm -f /tmp/pins \
+    && chmod 0755 /usr/local/bin/deskube-brave
+USER 1000

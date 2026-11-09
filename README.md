@@ -10,6 +10,9 @@ images by name; everything about building and proving them is here.
 | `base/`              | `ghcr.io/epheo/deskube-base`             | sway, Sunshine, the input shim; nothing a user can reach |
 | `desktop/`           | `ghcr.io/epheo/deskube-desktop`          | base plus sway's usual keys, a terminal, a launcher, Chromium |
 | `steam/`             | `ghcr.io/epheo/deskube-steam`            | base plus Steam Big Picture in gamescope          |
+| `brave/`             | `ghcr.io/epheo/deskube-brave`            | base plus Brave, alone on the output              |
+| `alacritty/`         | `ghcr.io/epheo/deskube-alacritty`        | base plus Alacritty, alone on the output          |
+| `evolution/`         | `ghcr.io/epheo/deskube-evolution`        | base plus Evolution, alone on the output          |
 | `moonlight-cli/`     | `ghcr.io/epheo/deskube-moonlight-cli`    | headless Moonlight that counts frames, for tests  |
 | `hack/`              |                                          | run an image with podman, stream to it, drive it  |
 
@@ -19,6 +22,7 @@ privilege the pod does not need. `make help` lists the targets.
 What comes from outside Fedora is pinned by sha256 per Fedora release
 in `base/pins` and `steam/pins`: when `fedora:latest` moves on, the
 build stops until the new release's lines are there.
+`brave/pins` holds Brave's signing keys, for every Fedora release.
 
 CI builds every image for each pull request and pushes them from main,
 tagged `main` and `sha-<first 7 characters of the commit>`.
@@ -45,6 +49,40 @@ The session reads the admin password from the file
 `DESKUBE_ADMIN_PASSWORD_FILE` names, so no environment holds it and
 `podman inspect` does not show it. A named file it cannot read stops
 the session. `DESKUBE_ADMIN_PASSWORD` is for older operators.
+
+## Images of one app
+
+`brave/`, `alacritty/` and `evolution/` each stream one app and nothing else.
+Each app runs under `deskube-app`, from the base image:
+
+- It outlives the stream, so the next client finds it as it was left.
+- A later launch opens no second window.
+- It comes back 2 s after it exits, or the client would watch black.
+- Its last run's output is in `$XDG_RUNTIME_DIR/deskube-app.log`.
+
+    make apps
+    IMAGE=ghcr.io/epheo/deskube-brave:main hack/run.sh deskbrave 49089
+    APP=Brave MIN_FPS=1 hack/e2e.sh deskbrave 49089
+
+What each needs on a cluster:
+
+- Brave: `spec.nestedSandboxes: true`.
+  Without user namespaces it aborts at start and the stream stays black.
+  It gets no `--no-sandbox` from this image.
+- Evolution: nothing more.
+  Without `nestedSandboxes` WebKit turns its own sandbox off, and HTML mail renders outside one.
+  Account passwords go to a keyring in the home; `gcr-prompter` asks for its password.
+- Alacritty: nothing more.
+
+Frames delivered at 1920x1080 and 60 fps asked, 2026-11-09, Ryzen AI Max+ 395, Radeon 8060S, Fedora 45.
+The last column is a podman seccomp filter that refuses nested user namespaces, as a plain pod does.
+
+                GPU        no GPU     no nested sandboxes
+    Alacritty   60.0 fps   28.3 fps   not run
+    Brave       60.0 fps   27.1 fps   aborts at start
+    Evolution   60.0 fps   29.0 fps   60.1 fps
+
+Not run: an NVIDIA GPU, a cluster, and Brave with `nestedSandboxes`.
 
 ## The base image
 

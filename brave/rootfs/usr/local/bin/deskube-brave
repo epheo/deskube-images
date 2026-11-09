@@ -1,0 +1,4 @@
+#!/bin/sh
+# No keyring in the pod, and no first run page in a stream.
+exec brave-browser --ozone-platform=wayland --password-store=basic \
+  --no-first-run --no-default-browser-check "$@"

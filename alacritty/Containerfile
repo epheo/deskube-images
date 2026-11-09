@@ -1,0 +1,7 @@
+# Alacritty alone on the output: a shell in the user's home.
+ARG BASE=ghcr.io/epheo/deskube-base:main
+FROM ${BASE}
+USER 0
+RUN dnf -y install --exclude=xorg-x11-server-Xwayland alacritty dejavu-sans-mono-fonts && dnf clean all
+COPY rootfs/ /
+USER 1000
