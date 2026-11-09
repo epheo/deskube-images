@@ -1,0 +1,3 @@
+# Nothing else in this image opens mail, and the question takes half the output.
+[org.gnome.evolution.mail]
+prompt-check-if-default-mailer=false

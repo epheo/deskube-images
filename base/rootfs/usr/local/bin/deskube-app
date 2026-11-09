@@ -1,0 +1,14 @@
+#!/bin/sh
+# Keeps one app on the output of an image that streams only that app.
+# Sunshine runs this detached at each launch: the app outlives the
+# stream, and the next launch must not open a second window. Nothing
+# else is on the output, so an app that exits comes back, or the client
+# would watch black.
+cd "$HOME" || exit 1
+RUN=${XDG_RUNTIME_DIR:-/tmp}
+exec 9> "$RUN/deskube-app.lock"
+flock -n 9 || exit 0
+while :; do
+  "$@" > "$RUN/deskube-app.log" 2>&1 9>&-
+  sleep 2
+done

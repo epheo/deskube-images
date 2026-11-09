@@ -8,6 +8,8 @@ BASE_IMG ?= $(REGISTRY)/deskube-base:$(TAG)
 DESKTOP_IMG ?= $(REGISTRY)/deskube-desktop:$(TAG)
 STEAM_IMG ?= $(REGISTRY)/deskube-steam:$(TAG)
 MOONLIGHT_CLI_IMG ?= moonlight-cli
+# One app alone on the output. Each directory builds deskube-<directory>.
+APPS = brave alacritty evolution
 # CI adds labels here, such as the source repository ghcr links a package to.
 BUILD_FLAGS ?=
 SHELLCHECK_IMG ?= docker.io/koalaman/shellcheck:v0.11.0
@@ -33,6 +35,11 @@ desktop: base ## Build the desktop image: sway with its keys, a terminal, Chromi
 steam: base ## Build the Steam image on the base image.
 	$(CONTAINER_TOOL) build $(BUILD_FLAGS) -t $(STEAM_IMG) --build-arg BASE=$(BASE_IMG) steam
 
+.PHONY: apps $(APPS)
+apps: $(APPS) ## Build the single app images on the base image.
+$(APPS): base
+	$(CONTAINER_TOOL) build $(BUILD_FLAGS) -t $(REGISTRY)/deskube-$@:$(TAG) --build-arg BASE=$(BASE_IMG) $@
+
 .PHONY: moonlight-cli
 moonlight-cli: ## Build the headless Moonlight client hack/e2e.sh streams with.
 	$(CONTAINER_TOOL) build $(BUILD_FLAGS) -t $(MOONLIGHT_CLI_IMG) moonlight-cli
@@ -44,7 +51,8 @@ lint: ## Lint the shell scripts, the Containerfiles and the CI workflow.
 	$(LINT) $(ACTIONLINT_IMG)
 
 .PHONY: push
-push: ## Push the base, desktop and Steam images.
+push: ## Push the base, desktop, Steam and single app images.
 	$(CONTAINER_TOOL) push $(BASE_IMG)
 	$(CONTAINER_TOOL) push $(DESKTOP_IMG)
 	$(CONTAINER_TOOL) push $(STEAM_IMG)
+	for a in $(APPS); do $(CONTAINER_TOOL) push $(REGISTRY)/deskube-$$a:$(TAG) || exit 1; done

@@ -1,0 +1,13 @@
+# Evolution alone on the output. Its data services and the keyring that
+# holds account passwords start on demand from the session bus.
+ARG BASE=ghcr.io/epheo/deskube-base:main
+FROM ${BASE}
+USER 0
+RUN dnf -y install --exclude=xorg-x11-server-Xwayland evolution gnome-keyring gcr adwaita-sans-fonts && dnf clean all
+
+# Same reason as in the base image; gnome-keyring ships CAP_IPC_LOCK.
+RUN getcap -r /usr 2>/dev/null | cut -d' ' -f1 | xargs -r -n1 setcap -r
+
+COPY rootfs/ /
+RUN glib-compile-schemas /usr/share/glib-2.0/schemas
+USER 1000

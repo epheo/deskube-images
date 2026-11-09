@@ -1,0 +1,4 @@
+# Brave's signing keys, which check every package from its repository.
+# Its repository has no per Fedora release path, so neither has this.
+# sha256  url
+bf978bd03e49f6006568d99f620763bf43a6455f6209dff791f52ebc6239f738  https://brave-browser-rpm-release.s3.brave.com/brave-core.asc
