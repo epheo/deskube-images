@@ -1,0 +1,41 @@
+# The web bridge: moonlight-web-stream, a Moonlight client that hands
+# Sunshine's stream to a browser. It runs beside a desktop, in its pod,
+# and reaches Sunshine on localhost.
+# Upstream's release as it is, not a build of ours: nothing is patched,
+# and its CI publishes a static binary with a digest.
+# The newest Fedora release only downloads and checks; nothing of it
+# is in the image.
+ARG FEDORA=latest
+FROM registry.fedoraproject.org/fedora:${FEDORA} AS release
+COPY pins /tmp/pins
+# GPL-3.0-or-later: the image carries the license and the address of
+# this binary's source.
+# The archive's files belong to the UID that built them, and its binary
+# is not executable.
+# Group 0 writes the state: OpenShift runs the image as an arbitrary
+# UID in that group. A volume mounted there takes its place.
+RUN ARCH=$(uname -m); mkdir /tmp/dl && cd /tmp/dl \
+    && { grep -q "^$ARCH " /tmp/pins || { echo "bridge/pins has no archive for $ARCH" >&2; exit 1; }; } \
+    && grep -E "^($ARCH|any) " /tmp/pins | while read -r _ sum url; do \
+         curl -fsSL -o "${url##*/}" "$url" && echo "$sum  ${url##*/}" | sha256sum -c --quiet \
+           || { echo "$url: not downloaded, or its sha256 is not the one in bridge/pins" >&2; exit 1; }; \
+       done \
+    && TAG=$(sed -n "s|^$ARCH .*/releases/download/\([^/]*\)/.*|\1|p" /tmp/pins) && [ -n "$TAG" ] \
+    && DOC=/out/usr/share/licenses/moonlight-web-stream \
+    && mkdir -p /out/moonlight-web/server "$DOC" \
+    && tar -xzf moonlight-web-*.tar.gz --no-same-owner --strip-components=1 -C /out/moonlight-web \
+    && chmod 0755 /out/moonlight-web/web-server \
+    && chmod 0775 /out/moonlight-web/server \
+    && cp LICENSE "$DOC/LICENSE" \
+    && printf '%s\n' "moonlight-web-stream $TAG, GPL-3.0-or-later, unmodified." \
+         "Binary and web client: the release archive of that tag." \
+         "Source: https://github.com/MrCreativ3001/moonlight-web-stream/tree/$TAG" > "$DOC/SOURCE"
+
+FROM scratch
+LABEL org.opencontainers.image.licenses="GPL-3.0-or-later"
+COPY --from=release /out/ /
+# It looks for static/ and server/ where it runs.
+WORKDIR /moonlight-web
+USER 1000:0
+EXPOSE 8080
+ENTRYPOINT ["/moonlight-web/web-server"]
