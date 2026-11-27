@@ -1,8 +1,9 @@
 # Fedora release, sha256, URL of every file the base build downloads.
 # A release with no lines here stops the build: fedora:latest moved on.
 # Sunshine publishes a digest per asset on its GitHub release page.
+# It deletes older pre-releases: a pin to one 404s once a newer one ships.
 # RPM Fusion: the releases/ tree never changes; rawhide's moves when it branches.
-45 7fd8e8ad9a36b46dbc141ec58b0a4552adc866cb09aced0c081cab6f5539319c https://github.com/LizardByte/Sunshine/releases/download/v2026.1107.185223/Sunshine-2026.1107.185223-1.fc45.x86_64.rpm
+45 1d2a2e2b36fe8e5f406c998deaa5b7796fce4bff7a9594b3f7d838264deba602 https://github.com/LizardByte/Sunshine/releases/download/v2026.1127.15710/Sunshine-2026.1127.15710-1.fc45.x86_64.rpm
 45 761100efc44f57e16dadec1780582f725028e212593740e955dbc7d5b2de81bb https://download1.rpmfusion.org/free/fedora/releases/45/Everything/x86_64/os/Packages/r/rpmfusion-free-release-45-2.noarch.rpm
-46 cc5e2d29e163d73c7aa2a55d0d242202993d2638c18a806464a0d73a0115c42b https://github.com/LizardByte/Sunshine/releases/download/v2026.1107.185223/Sunshine-2026.1107.185223-1.fc46.x86_64.rpm
+46 59da59551419ed6c0c0f7d705878967ab80687eb06af646bad48d959e984d7cd https://github.com/LizardByte/Sunshine/releases/download/v2026.1127.15710/Sunshine-2026.1127.15710-1.fc46.x86_64.rpm
 46 9365a2240104c56efb81feaca1fdd0e9b36c93bb6dc1001dea0967261faf867e https://download1.rpmfusion.org/free/fedora/development/rawhide/Everything/x86_64/os/Packages/r/rpmfusion-free-release-46-0.2.noarch.rpm
