@@ -246,6 +246,11 @@ SHIM=/usr/lib64/libdeskube-uinput.so
 # what runs in it stay, and Sunshine is started again. It is killed when
 # it does not open its port: that is how a stuck capture shows.
 while kill -0 "$SWAY_PID" 2> /dev/null; do
+  # From 2026.1127, Sunshine with no portal restore token on disk asks for
+  # one and restarts itself. xdg-desktop-portal-wlr hands out none, so it
+  # would restart forever. An empty file counts as saved and asks for none.
+  # Sunshine names it after XDG_SESSION_DESKTOP, unset here.
+  if [ "$CAPTURE" = portal ]; then : >> "$CONF_DIR/portal_token.unknown"; fi
   LD_PRELOAD="$SHIM" sunshine "$CONF_DIR/sunshine.conf" &
   PID=$!
   (
