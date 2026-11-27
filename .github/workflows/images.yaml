@@ -42,7 +42,7 @@ jobs:
           # All of these sit on base: one job, one local image store. Built
           # apart, each would get base layers of its own to pull on every node.
           - targets: base desktop steam apps
-            images: deskube-base deskube-desktop deskube-steam deskube-brave deskube-alacritty deskube-evolution
+            images: deskube-base deskube-desktop deskube-steam deskube-brave deskube-alacritty deskube-evolution deskube-bench
           - targets: moonlight-cli
             images: deskube-moonlight-cli
     steps:

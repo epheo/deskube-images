@@ -1,0 +1,9 @@
+# glmark2 alone on the output, fullscreen and looping forever: a GPU
+# load whose picture never stops moving, to count frames under load.
+ARG BASE=ghcr.io/epheo/deskube-base:main
+FROM ${BASE}
+USER 0
+RUN dnf -y install --exclude=xorg-x11-server-Xwayland glmark2 && dnf clean all
+COPY rootfs/ /
+RUN chmod 0755 /usr/local/bin/deskube-bench
+USER 1000

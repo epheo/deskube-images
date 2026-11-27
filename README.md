@@ -13,6 +13,7 @@ images by name; everything about building and proving them is here.
 | `brave/`             | `ghcr.io/epheo/deskube-brave`            | base plus Brave, alone on the output              |
 | `alacritty/`         | `ghcr.io/epheo/deskube-alacritty`        | base plus Alacritty, alone on the output          |
 | `evolution/`         | `ghcr.io/epheo/deskube-evolution`        | base plus Evolution, alone on the output          |
+| `bench/`             | `ghcr.io/epheo/deskube-bench`            | base plus glmark2 looping fullscreen, a GPU load for tests |
 | `moonlight-cli/`     | `ghcr.io/epheo/deskube-moonlight-cli`    | headless Moonlight that counts frames, for tests  |
 | `hack/`              |                                          | run an image with podman, stream to it, drive it  |
 
@@ -52,7 +53,7 @@ the session. `DESKUBE_ADMIN_PASSWORD` is for older operators.
 
 ## Images of one app
 
-`brave/`, `alacritty/` and `evolution/` each stream one app and nothing else.
+`brave/`, `alacritty/`, `evolution/` and `bench/` each stream one app and nothing else.
 Each app runs under `deskube-app`, from the base image:
 
 - It outlives the stream, so the next client finds it as it was left.
@@ -73,6 +74,7 @@ What each needs on a cluster:
   Without `nestedSandboxes` WebKit turns its own sandbox off, and HTML mail renders outside one.
   Account passwords go to a keyring in the home; `gcr-prompter` asks for its password.
 - Alacritty: nothing more.
+- glmark2: nothing more.
 
 Frames delivered at 1920x1080 and 60 fps asked, 2026-11-09, Ryzen AI Max+ 395, Radeon 8060S, Fedora 45.
 The last column is a podman seccomp filter that refuses nested user namespaces, as a plain pod does.
@@ -83,6 +85,29 @@ The last column is a podman seccomp filter that refuses nested user namespaces, 
     Evolution   60.0 fps   29.0 fps   60.1 fps
 
 Not run: an NVIDIA GPU, a cluster, and Brave with `nestedSandboxes`.
+
+`bench/` runs glmark2-es2-wayland fullscreen with `--run-forever`, for counting frames under load.
+Its picture never stops moving, so every frame asked is sent.
+Two apps, one load each:
+
+- `glmark2` draws its two heaviest scenes, terrain and refract, at the output's rate (`--swap-mode fifo`), like a game at vsync.
+- `glmark2 uncapped` draws as fast as the GPU lets it: desktops on one GPU share all of its time.
+
+The first app a desktop launches keeps the output until the pod restarts: deskube-app's lock turns the other away.
+Its per-scene FPS lines also go to PID 1's stdout, so they are in the pod's log:
+
+    oc logs <pod> | grep 'FPS:'
+
+Result 2026-11-27, same machine, 1920x1080 at 60 fps asked, H.264.
+Uncapped ran its first 12 scenes.
+Busy is glmark2's share of the GPU's gfx engine, from `drm-engine-gfx` in its fdinfo.
+
+                               stream                 glmark2
+    GPU, glmark2               60.0 fps for 64.7 s    62 to 63 FPS per scene, busy 4.2 to 6.0 %, 114 to 216 MiB
+    GPU, glmark2 uncapped      60.0 fps for 124.7 s   30216 to 47577 FPS per scene, busy 51 to 94 %, 48 to 64 MiB
+    no GPU, glmark2 uncapped   59.8 fps for 64.3 s    llvmpipe, 440 to 828 FPS per scene
+
+MiB is glmark2's VRAM and GTT.
 
 ## The base image
 

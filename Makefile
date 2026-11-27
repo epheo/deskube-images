@@ -9,7 +9,7 @@ DESKTOP_IMG ?= $(REGISTRY)/deskube-desktop:$(TAG)
 STEAM_IMG ?= $(REGISTRY)/deskube-steam:$(TAG)
 MOONLIGHT_CLI_IMG ?= moonlight-cli
 # One app alone on the output. Each directory builds deskube-<directory>.
-APPS = brave alacritty evolution
+APPS = brave alacritty evolution bench
 # CI adds labels here, such as the source repository ghcr links a package to.
 BUILD_FLAGS ?=
 SHELLCHECK_IMG ?= docker.io/koalaman/shellcheck:v0.11.0
