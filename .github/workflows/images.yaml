@@ -41,8 +41,10 @@ jobs:
         include:
           # All of these sit on base: one job, one local image store. Built
           # apart, each would get base layers of its own to pull on every node.
-          - targets: base desktop steam apps
-            images: deskube-base deskube-desktop deskube-steam deskube-brave deskube-alacritty deskube-evolution deskube-bench
+          # The bridge sits on nothing: it is here for its stream test,
+          # which needs this run's desktop.
+          - targets: base desktop steam apps bridge
+            images: deskube-base deskube-desktop deskube-steam deskube-brave deskube-alacritty deskube-evolution deskube-bench deskube-bridge
           - targets: moonlight-cli
             images: deskube-moonlight-cli
     steps:
@@ -97,6 +99,18 @@ jobs:
           rm moonlight-cli.tar.zst
           RENDER=none IMAGE="$REGISTRY/deskube-desktop:sha-${GITHUB_SHA::7}" hack/run.sh ci 48989
           WORK="$RUNNER_TEMP/e2e" MOONLIGHT="$REGISTRY/deskube-moonlight-cli:sha-${GITHUB_SHA::7}" hack/e2e.sh ci 48989
+      # The same desktop as a browser gets it: beside the bridge in one
+      # pod, paired over both HTTP APIs, frames counted on the WebSocket.
+      # The script prints the logs of a run that fails.
+      - name: Stream through the bridge
+        if: contains(matrix.targets, 'bridge')
+        timeout-minutes: 10
+        run: >-
+          RENDER=none
+          IMAGE="$REGISTRY/deskube-desktop:sha-${GITHUB_SHA::7}"
+          BRIDGE="$REGISTRY/deskube-bridge:sha-${GITHUB_SHA::7}"
+          WORK="$RUNNER_TEMP/bridge-e2e"
+          hack/bridge-e2e.sh ci 18080
       - name: Logs of the stream test
         if: failure() && contains(matrix.targets, 'desktop')
         run: |
