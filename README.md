@@ -90,7 +90,7 @@ Not run: an NVIDIA GPU, a cluster, and Brave with `nestedSandboxes`.
 Its picture never stops moving, so every frame asked is sent.
 Two apps, one load each:
 
-- `glmark2` draws at the output's rate (`--swap-mode fifo`), like a game at vsync.
+- `glmark2` draws its two heaviest scenes, terrain and refract, at the output's rate (`--swap-mode fifo`), like a game at vsync.
 - `glmark2 uncapped` draws as fast as the GPU lets it: desktops on one GPU share all of its time.
 
 The first app a desktop launches keeps the output until the pod restarts: deskube-app's lock turns the other away.
@@ -98,16 +98,16 @@ Its per-scene FPS lines also go to PID 1's stdout, so they are in the pod's log:
 
     oc logs <pod> | grep 'FPS:'
 
-Result 2026-11-27, same machine, 1920x1080 at 60 fps asked, H.264, the first 12 scenes.
+Result 2026-11-27, same machine, 1920x1080 at 60 fps asked, H.264.
+Uncapped ran its first 12 scenes.
 Busy is glmark2's share of the GPU's gfx engine, from `drm-engine-gfx` in its fdinfo.
 
                                stream                 glmark2
-    GPU, glmark2               60.0 fps for 124.7 s   63 FPS per scene, busy 0.3 to 0.6 %
-    GPU, glmark2 uncapped      60.0 fps for 124.7 s   30216 to 47577 FPS per scene, busy 51 to 94 %
+    GPU, glmark2               60.0 fps for 64.7 s    62 to 63 FPS per scene, busy 4.2 to 6.0 %, 114 to 216 MiB
+    GPU, glmark2 uncapped      60.0 fps for 124.7 s   30216 to 47577 FPS per scene, busy 51 to 94 %, 48 to 64 MiB
     no GPU, glmark2 uncapped   59.8 fps for 64.3 s    llvmpipe, 440 to 828 FPS per scene
 
-Over a whole loop of 33 scenes, capped glmark2 stays at 63 FPS and peaks at 8 % busy, in terrain and refract.
-glmark2 holds 48 to 64 MiB of VRAM and GTT, capped or not.
+MiB is glmark2's VRAM and GTT.
 
 ## The base image
 
