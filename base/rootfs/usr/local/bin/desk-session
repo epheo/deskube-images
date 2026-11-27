@@ -116,7 +116,8 @@ else
   ENCODER=${DESKUBE_ENCODER:-software}
   CAPTURE=${DESKUBE_CAPTURE:-portal}
 fi
-export XDG_CURRENT_DESKTOP=sway XDG_SESSION_TYPE=wayland
+# Sunshine names its portal token file after XDG_SESSION_DESKTOP.
+export XDG_CURRENT_DESKTOP=sway XDG_SESSION_DESKTOP=sway XDG_SESSION_TYPE=wayland
 sway -c /etc/deskube/sway.config > "$XDG_RUNTIME_DIR/sway.log" 2>&1 &
 SWAY_PID=$!
 KEEP="$KEEP $SWAY_PID"
@@ -246,13 +247,22 @@ SHIM=/usr/lib64/libdeskube-uinput.so
 # what runs in it stay, and Sunshine is started again. It is killed when
 # it does not open its port: that is how a stuck capture shows.
 while kill -0 "$SWAY_PID" 2> /dev/null; do
-  # From 2026.1127, Sunshine with no portal restore token on disk asks for
-  # one and restarts itself. xdg-desktop-portal-wlr hands out none, so it
-  # would restart forever. An empty file counts as saved and asks for none.
-  # Sunshine names it after XDG_SESSION_DESKTOP, unset here.
-  if [ "$CAPTURE" = portal ]; then : >> "$CONF_DIR/portal_token.unknown"; fi
+  # With capture portal and no token file, Sunshine asks the portal for a
+  # restore token, then restarts itself by execv, in the same PID.
+  # xdg-desktop-portal-wlr 0.9 hands out none by default, so it restarted
+  # forever. An empty file counts as saved and asks for none.
+  # Sunshine deletes it itself (a failed probe, the web UI's token reset),
+  # so it is put back for as long as this Sunshine runs.
+  TOKEN=$CONF_DIR/portal_token.sway
+  if [ "$CAPTURE" = portal ]; then : >> "$TOKEN"; fi
   LD_PRELOAD="$SHIM" sunshine "$CONF_DIR/sunshine.conf" &
   PID=$!
+  if [ "$CAPTURE" = portal ]; then
+    while kill -0 "$PID" 2> /dev/null; do
+      [ -e "$TOKEN" ] || : >> "$TOKEN"
+      sleep 1
+    done &
+  fi
   (
     tries=0
     until curl -s -o /dev/null -m 2 "http://127.0.0.1:$PORT/serverinfo"; do
