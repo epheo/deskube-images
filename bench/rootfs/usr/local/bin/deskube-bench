@@ -1,8 +1,15 @@
 #!/bin/sh
+# deskube-bench capped|uncapped
+# capped draws at the output's rate, like a game at vsync.
+case ${1:-} in
+  capped) SWAP=fifo ;;
+  uncapped) SWAP=default ;;
+  *) echo "deskube-bench: capped or uncapped, not '${1:-}'" >&2; exit 2 ;;
+esac
 # Pod logs are PID 1's stdout. Sunshine gives its apps /dev/null and
 # deskube-app a file, so the results are copied there.
 # glmark2 writes a scene's name, then its FPS once the scene ends: lines
 # go out whole, or Sunshine's log lands between the two.
-glmark2-es2-wayland --fullscreen --run-forever 2>&1 |
+glmark2-es2-wayland --fullscreen --run-forever --swap-mode "$SWAP" 2>&1 |
   while IFS= read -r line; do printf '%s\n' "$line"; done |
   tee -a /proc/1/fd/1
