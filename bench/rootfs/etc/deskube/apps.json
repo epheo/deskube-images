@@ -1,0 +1,4 @@
+{
+  "env": {"PATH": "$(PATH):$(HOME)/.local/bin"},
+  "apps": [{"name": "glmark2", "detached": ["deskube-app deskube-bench"]}]
+}
