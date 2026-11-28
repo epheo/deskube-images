@@ -42,9 +42,10 @@ jobs:
           # All of these sit on base: one job, one local image store. Built
           # apart, each would get base layers of its own to pull on every node.
           # The bridge sits on nothing: it is here for its stream test,
-          # which needs this run's desktop.
-          - targets: base desktop steam apps bridge
-            images: deskube-base deskube-desktop deskube-steam deskube-brave deskube-alacritty deskube-evolution deskube-bench deskube-bridge
+          # which needs this run's desktop. Its source is an image too,
+          # pushed before it: the bridge is GPL and may not be out alone.
+          - targets: base desktop steam apps bridge bridge-source
+            images: deskube-base deskube-desktop deskube-steam deskube-brave deskube-alacritty deskube-evolution deskube-bench deskube-bridge-source deskube-bridge
           - targets: moonlight-cli
             images: deskube-moonlight-cli
     steps:
@@ -105,12 +106,25 @@ jobs:
       - name: Stream through the bridge
         if: contains(matrix.targets, 'bridge')
         timeout-minutes: 10
-        run: >-
-          RENDER=none
-          IMAGE="$REGISTRY/deskube-desktop:sha-${GITHUB_SHA::7}"
-          BRIDGE="$REGISTRY/deskube-bridge:sha-${GITHUB_SHA::7}"
-          WORK="$RUNNER_TEMP/bridge-e2e"
-          hack/bridge-e2e.sh ci 18080
+        env:
+          RENDER: none
+          # A turning cube. A still desktop streams at the rate Sunshine
+          # repeats a picture at, whatever the encoder and the bridge do.
+          CUBE: 1
+          # PROVISIONAL. No runner has streamed the cube yet, so no rate
+          # exists to set this from: 5 only lets the first run through.
+          # That run's log gives the cube's rate. The floor then becomes
+          # a fixed number that half of that rate fails, with the run ids
+          # and their rates here. Never a number measured in the same run.
+          # Known so far, on a still desktop: run 46084712176, 27.4 fps
+          # through the bridge and 27.4 fps to moonlight-cli.
+          MIN_FPS: 5
+        run: |
+          # The first test's desktop would share the runner's CPUs with this one.
+          podman stop ci > /dev/null
+          IMAGE="$REGISTRY/deskube-desktop:sha-${GITHUB_SHA::7}" \
+            BRIDGE="$REGISTRY/deskube-bridge:sha-${GITHUB_SHA::7}" \
+            WORK="$RUNNER_TEMP/bridge-e2e" hack/bridge-e2e.sh ci 18080
       - name: Logs of the stream test
         if: failure() && contains(matrix.targets, 'desktop')
         run: |
