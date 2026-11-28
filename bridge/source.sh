@@ -111,3 +111,5 @@ COMMITS names the commit of each repository the source archive holds.
 EOF
 
 cd /tmp && tar -cf - "$NAME" | zstd -q -T0 -12 -o "$OUT/$NAME.tar.zst"
+# Else the stage keeps 1.2 GB of trees and downloads, on a runner short of disk.
+rm -rf "/tmp/$NAME" /tmp/vendor.log /tmp/empty-cargo-home ~/.cargo
