@@ -111,14 +111,16 @@ jobs:
           # A turning cube. A still desktop streams at the rate Sunshine
           # repeats a picture at, whatever the encoder and the bridge do.
           CUBE: 1
-          # PROVISIONAL. No runner has streamed the cube yet, so no rate
-          # exists to set this from: 5 only lets the first run through.
-          # That run's log gives the cube's rate. The floor then becomes
-          # a fixed number that half of that rate fails, with the run ids
-          # and their rates here. Never a number measured in the same run.
-          # Known so far, on a still desktop: run 46084712176, 27.4 fps
-          # through the bridge and 27.4 fps to moonlight-cli.
-          MIN_FPS: 5
+          # A fixed floor, set from a past run and never from this one: a
+          # gate that measures itself cannot fail.
+          # Run 46088109124 streamed the cube through the bridge at
+          # 59.8 fps, 1196 frames in 20.0 s with 1 key frame. Half of
+          # that is 30, which 40 fails; a third of the rate is left for
+          # a slow runner.
+          # One run so far. Move it with more runs, by hand.
+          # A still desktop is no measure: run 46084712176 got 27.4 fps,
+          # the rate Sunshine repeats a picture at.
+          MIN_FPS: 40
         run: |
           # The first test's desktop would share the runner's CPUs with this one.
           podman stop ci > /dev/null
