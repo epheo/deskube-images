@@ -66,6 +66,7 @@ push: ## Push the base, desktop, Steam, single app, bridge and bridge source ima
 	$(CONTAINER_TOOL) push $(BASE_IMG)
 	$(CONTAINER_TOOL) push $(DESKTOP_IMG)
 	$(CONTAINER_TOOL) push $(STEAM_IMG)
-	$(CONTAINER_TOOL) push $(BRIDGE_IMG)
+	# The bridge is GPL: its source is out before it, never after.
 	$(CONTAINER_TOOL) push $(BRIDGE_SOURCE_IMG)
+	$(CONTAINER_TOOL) push $(BRIDGE_IMG)
 	for a in $(APPS); do $(CONTAINER_TOOL) push $(REGISTRY)/deskube-$$a:$(TAG) || exit 1; done
