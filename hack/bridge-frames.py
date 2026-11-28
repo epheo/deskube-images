@@ -5,6 +5,7 @@ WebSocket transport, and counts the video frames it is sent.
 bridge-frames.py URL HOST_ID APP_ID ["Header: value"]
 URL is the bridge's API, such as http://127.0.0.1:8080/api.
 SIZE=1920x1080 FPS=60 BITRATE=20000 CODEC=h264|hevc|av1 SECS=20
+MAX_KEY_FRAMES=3
 
 Standard library only: a CI runner has no WebSocket module.
 """
@@ -100,8 +101,8 @@ def main():
         "supported_codecs": codec, "preferred_codecs": codec,
     }}).encode())
 
-    frames = idr = audio = size = 0
-    first, asked, cut = None, time.monotonic(), False
+    frames = idr = audio = size = unordered = 0
+    first, asked, cut, stamp = None, time.monotonic(), False, None
     try:
         for kind, data in messages(rd, sock):
             # Pings come ten times a second, so a still picture ends on
@@ -120,6 +121,11 @@ def main():
                 frames += 1
                 idr += data[1]
                 size += len(data)
+                # Microseconds since the stream began, 32 bits that wrap.
+                # A frame sent twice or out of order shows here, not in the count.
+                last, stamp = stamp, int.from_bytes(data[2:6], "big")
+                if last is not None and not 0 < (stamp - last) & 0xFFFFFFFF < 1 << 31:
+                    unordered += 1
             elif data[0] == AUDIO:
                 audio += 1
         else:
@@ -144,6 +150,14 @@ def main():
           f"{size * 8 / max(took, 1) / 1e6:.1f} Mbit/s; key frames: {idr}; audio packets: {audio}")
     if cut:
         sys.exit(f"the bridge ended the stream before {secs:.0f} s")
+    if unordered:
+        sys.exit(f"{unordered} frames came with a timestamp that is not after the frame before")
+    # One key frame opens a stream. A capture that restarts on every frame
+    # sends nothing else, and the bridge asks for one each time it drops
+    # video for a client it finds late: both keep the count of frames up.
+    most = int(os.environ.get("MAX_KEY_FRAMES", "3"))
+    if idr > most:
+        sys.exit(f"{idr} key frames, more than {most}")
 
 
 main()

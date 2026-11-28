@@ -5,6 +5,7 @@
 # ./bridge-e2e.sh [name] [port]   CODEC=h264|hevc|av1  SIZE=1920x1080  FPS=60  SECS=20
 # IMAGE and BRIDGE are the two images. RENDER is as in run.sh.
 # CUBE=1 spins a Vulkan cube on the desktop, a moving picture.
+# MIN_FPS is the rate the stream must reach, MAX_KEY_FRAMES what it may not pass.
 # KEEP=1 leaves the pod and its volumes, and says where its page is.
 # Every name starts with dkb-. Only the bridge's port leaves the pod,
 # on 127.0.0.1: Sunshine is reached from inside.
@@ -146,7 +147,8 @@ APP_ID=$(api "$API/apps?host_id=$HOST_ID" | python3 -c 'import sys, json; print(
 [ -n "$APP_ID" ] || { echo "Sunshine lists no app named $APP"; exit 1; }
 echo "app $APP is $APP_ID"
 
-[ "${CUBE:-}" != 1 ] || podman exec -d -e XDG_RUNTIME_DIR="/tmp/run-$DESK_UID" -e WAYLAND_DISPLAY=wayland-1 "$POD-desk" vkcube
+[ "${CUBE:-}" != 1 ] || podman exec -d -e XDG_RUNTIME_DIR="/tmp/run-$DESK_UID" -e WAYLAND_DISPLAY=wayland-1 "$POD-desk" \
+  sh -c 'exec vkcube > /tmp/vkcube.log 2>&1' > /dev/null
 # The bridge is one process: /proc has its CPU time and its peak memory.
 BRIDGE_PID=$(podman inspect -f '{{.State.Pid}}' "$POD-web")
 ticks() { awk '{ print $14 + $15 }' "/proc/$BRIDGE_PID/stat"; }
@@ -155,6 +157,16 @@ SECS=${SECS:-20} ./bridge-frames.py "$API" "$HOST_ID" "$APP_ID" "$HEADER: e2e" 2
 awk -v ticks="$(($(ticks) - TICKS))" -v hz="$(getconf CLK_TCK)" -v secs="$(($(date +%s) - SINCE))" \
   '/VmHWM/ { printf "bridge: %.1f %% of a CPU over %d s, %d MiB resident at most\n", 100 * ticks / hz / secs, secs, $2 / 1024 }' \
   "/proc/$BRIDGE_PID/status"
+
+# A cube that died leaves a still desktop, and its rate says nothing of
+# a moving picture.
+if [ "${CUBE:-}" != 1 ]; then
+  echo "picture: a still desktop"
+elif desk pgrep -x vkcube > /dev/null; then
+  echo "picture: vkcube, still turning after the stream"
+else
+  echo "picture: vkcube is not running"; desk cat /tmp/vkcube.log || true; exit 1
+fi
 
 # Closing the stream leaves the app running, as closing Moonlight does.
 [ "${QUIT:-1}" = 0 ] || echo "app closed: $(api -X POST "$API/host/cancel" -d "{\"host_id\":$HOST_ID}")"
