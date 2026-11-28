@@ -87,6 +87,30 @@ up desk curl -sf -m 2 "http://127.0.0.1:$SUNSHINE/serverinfo"
 up curl -sf -m 2 "http://127.0.0.1:$PORT$PREFIX/config.js"
 [ "$(curl -s -m 5 -o /dev/null -w '%{http_code}' "$API/hosts")" = 401 ] \
   || { echo "the bridge answers a caller who sets no $HEADER"; exit 1; }
+# Upstream makes the first caller of /api/login the admin of a new
+# bridge, header or not. The image's config turns that off. The desktop
+# asks too: it shares the pod's network, where no NetworkPolicy stands.
+LOGIN=(curl -s -m 5 -o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' -d '{"name":"first","password":"first"}')
+for caller in host desktop; do
+  case $caller in
+    host) code=$("${LOGIN[@]}" "$API/login") ;;
+    desktop) code=$(desk "${LOGIN[@]}" "http://127.0.0.1:8080$PREFIX/api/login") ;;
+  esac
+  case $code in
+    4*) ;;
+    *) echo "/api/login without $HEADER, from the $caller: HTTP $code, a first login may have made an admin"; exit 1 ;;
+  esac
+done
+echo "no admin by first login, from the host or from the desktop"
+# Upstream's default hands every WebRTC attempt to Google's STUN servers.
+# The bridge lists its ICE servers in Link headers and uses the same list.
+web() { podman exec "$POD-web" /moonlight-web/web-server --config-path /moonlight-web/config.json "$@"; }
+[ "$(web config print | python3 -c 'import json, sys; c = json.load(sys.stdin); print(c["webrtc"]["ice_servers"], c["web_server"]["first_login_create_admin"])')" = "[] False" ] \
+  || { echo "the bridge's config names an ICE server, or lets a first login be admin"; exit 1; }
+if api -D - -o /dev/null -X OPTIONS "$API/host/stream/webrtc" | grep -i '^link:'; then
+  echo "the bridge hands a browser the ICE servers above"; exit 1
+fi
+echo "no ICE server in the bridge's config or in what it tells a browser"
 
 HOST_ID=$(api -X POST "$API/host" -d "{\"address\":\"127.0.0.1\",\"http_port\":$SUNSHINE}" | field host host_id)
 echo "host $HOST_ID added"

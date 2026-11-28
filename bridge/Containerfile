@@ -57,8 +57,11 @@ FROM scratch
 LABEL org.opencontainers.image.licenses="GPL-3.0-or-later"
 COPY --from=release /out/ /
 COPY --from=source /notices/ /usr/share/licenses/moonlight-web-stream/third-party/
+# The config sits outside server/, where a volume is mounted, and on a
+# root this UID cannot write: nothing replaces it at run time.
+COPY config.json /moonlight-web/config.json
 # It looks for static/ and server/ where it runs.
 WORKDIR /moonlight-web
 USER 1000:0
 EXPOSE 8080
-ENTRYPOINT ["/moonlight-web/web-server"]
+ENTRYPOINT ["/moonlight-web/web-server", "--config-path", "/moonlight-web/config.json"]
