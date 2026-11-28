@@ -3,24 +3,34 @@
 # and reaches Sunshine on localhost.
 # Upstream's release as it is, not a build of ours: nothing is patched,
 # and its CI publishes a static binary with a digest.
-# The newest Fedora release only downloads and checks; nothing of it
-# is in the image.
+# The newest Fedora release only fetches and checks; of Fedora the image
+# holds two license files.
 ARG FEDORA=latest
-FROM registry.fedoraproject.org/fedora:${FEDORA} AS release
+FROM registry.fedoraproject.org/fedora:${FEDORA} AS tools
+# git asks upstream what its tag names. cargo and jq read the lock files
+# for the source. rust and musl-libc bring the license texts of what
+# upstream links statically.
+RUN dnf -y install git-core cargo jq musl-libc && dnf clean all
+
+FROM tools AS release
 COPY pins /tmp/pins
-# GPL-3.0-or-later: the image carries the license and the address of
-# this binary's source.
+# The image that holds this build's source. The Makefile names it.
+ARG SOURCE_IMG=ghcr.io/epheo/deskube-bridge-source:main
+# A tag can be moved or deleted: the build stops when upstream's no
+# longer names the pinned commit.
 # The archive's files belong to the UID that built them, and its binary
 # is not executable.
 # Group 0 writes the state: OpenShift runs the image as an arbitrary
 # UID in that group. A volume mounted there takes its place.
-RUN ARCH=$(uname -m); mkdir /tmp/dl && cd /tmp/dl \
-    && { grep -q "^$ARCH " /tmp/pins || { echo "bridge/pins has no archive for $ARCH" >&2; exit 1; }; } \
+# hadolint ignore=SC2046
+RUN set -- $(grep '^tag ' /tmp/pins); TAG=$2; COMMIT=$3; REPO=$4; ARCH=$(uname -m); mkdir /tmp/dl && cd /tmp/dl \
+    && { [ "$(git ls-remote "$REPO" "refs/tags/$TAG" "refs/tags/$TAG^{}" | tail -n 1 | cut -f1)" = "$COMMIT" ] \
+         || { echo "$REPO: the tag $TAG does not name $COMMIT, or could not be asked" >&2; exit 1; }; } \
+    && { grep "^$ARCH " /tmp/pins | grep -q "/releases/download/$TAG/" || { echo "bridge/pins has no $TAG archive for $ARCH" >&2; exit 1; }; } \
     && grep -E "^($ARCH|any) " /tmp/pins | while read -r _ sum url; do \
          curl -fsSL -o "${url##*/}" "$url" && echo "$sum  ${url##*/}" | sha256sum -c --quiet \
            || { echo "$url: not downloaded, or its sha256 is not the one in bridge/pins" >&2; exit 1; }; \
        done \
-    && TAG=$(sed -n "s|^$ARCH .*/releases/download/\([^/]*\)/.*|\1|p" /tmp/pins) && [ -n "$TAG" ] \
     && DOC=/out/usr/share/licenses/moonlight-web-stream \
     && mkdir -p /out/moonlight-web/server "$DOC" \
     && tar -xzf moonlight-web-*.tar.gz --no-same-owner --strip-components=1 -C /out/moonlight-web \
@@ -28,12 +38,25 @@ RUN ARCH=$(uname -m); mkdir /tmp/dl && cd /tmp/dl \
     && chmod 0775 /out/moonlight-web/server \
     && cp LICENSE "$DOC/LICENSE" \
     && printf '%s\n' "moonlight-web-stream $TAG, GPL-3.0-or-later, unmodified." \
-         "Binary and web client: the release archive of that tag." \
-         "Source: https://github.com/MrCreativ3001/moonlight-web-stream/tree/$TAG" > "$DOC/SOURCE"
+         "The binary and the web client are upstream's release archive, sha256 $(sha256sum moonlight-web-*.tar.gz | cut -d' ' -f1)." \
+         "Its tag names commit $COMMIT of $REPO" \
+         "The corresponding source is the one archive in the image $SOURCE_IMG" \
+         "It holds that commit, the moonlight-common-rust it builds on, the Rust crates of their lock files and the npm packages of its package-lock.json." \
+         "To take it out: podman create --name source $SOURCE_IMG none && podman cp source:/ . && podman rm source" \
+         "third-party/ holds the license files of those crates and packages, and INDEX lists them." > "$DOC/SOURCE"
+
+FROM tools AS source
+COPY pins source.sh /tmp/
+RUN bash /tmp/source.sh /tmp/pins /source /notices
+
+# make bridge-source builds this stage: the source, beside the image.
+FROM scratch AS bridge-source
+COPY --from=source /source/ /
 
 FROM scratch
 LABEL org.opencontainers.image.licenses="GPL-3.0-or-later"
 COPY --from=release /out/ /
+COPY --from=source /notices/ /usr/share/licenses/moonlight-web-stream/third-party/
 # It looks for static/ and server/ where it runs.
 WORKDIR /moonlight-web
 USER 1000:0
