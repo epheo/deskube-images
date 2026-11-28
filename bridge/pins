@@ -1,0 +1,10 @@
+# What the bridge build downloads, and what each must be.
+# tag: the release, the commit its tag must still name, the repository.
+# The other lines: machine, sha256, URL. A machine with no archive line stops the build.
+# moonlight-web-stream publishes a digest per asset on its GitHub release page.
+# A stable release: upstreams delete pre-releases, and a pin to one then 404s.
+# The musl archive: its binary is static, so the image needs no libc.
+# The archive holds no license text: that comes from the tag's commit.
+tag v3.0.2 cb3de8864b12b43f7904967e64c24392a7fc44f2 https://github.com/MrCreativ3001/moonlight-web-stream.git
+x86_64 7197fdc842c79445453a7ceff95d41a41046356477a17e81b038e3a1e9c1d0b8 https://github.com/MrCreativ3001/moonlight-web-stream/releases/download/v3.0.2/moonlight-web-x86_64-unknown-linux-musl.tar.gz
+any 8b1ba204bb69a0ade2bfcf65ef294a920f6bb361b317dba43c7ef29d96332b9b https://raw.githubusercontent.com/MrCreativ3001/moonlight-web-stream/cb3de8864b12b43f7904967e64c24392a7fc44f2/LICENSE

@@ -14,6 +14,8 @@ images by name; everything about building and proving them is here.
 | `alacritty/`         | `ghcr.io/epheo/deskube-alacritty`        | base plus Alacritty, alone on the output          |
 | `evolution/`         | `ghcr.io/epheo/deskube-evolution`        | base plus Evolution, alone on the output          |
 | `bench/`             | `ghcr.io/epheo/deskube-bench`            | base plus glmark2 looping fullscreen, a GPU load for tests |
+| `bridge/`            | `ghcr.io/epheo/deskube-bridge`           | moonlight-web-stream beside a desktop: the stream in a browser |
+| `bridge/`            | `ghcr.io/epheo/deskube-bridge-source`    | the source of that bridge in one archive, as its license asks |
 | `moonlight-cli/`     | `ghcr.io/epheo/deskube-moonlight-cli`    | headless Moonlight that counts frames, for tests  |
 | `hack/`              |                                          | run an image with podman, stream to it, drive it  |
 
@@ -31,6 +33,8 @@ Each run also lints with `make lint`: shellcheck, hadolint, actionlint.
 And the new desktop streams to the new moonlight-cli through
 `hack/e2e.sh`, on the CPU: the runner has no GPU.
 Main pushes no desktop that fails it.
+The same desktop then streams a moving picture through the new bridge, `hack/bridge-e2e.sh`.
+Main pushes neither when that fails.
 Locally `make moonlight-cli` tags it `moonlight-cli`, the name the
 tests run.
 
@@ -40,6 +44,8 @@ tests run.
     RENDER=none hack/run.sh deskpod 48989   # no GPU: the CPU draws and encodes
     hack/e2e.sh deskpod 48989        # pair through the admin API, stream headless
     CODEC=av1 SIZE=2560x1440 hack/e2e.sh deskpod 48989
+    make bridge                      # the web bridge
+    hack/bridge-e2e.sh               # desktop and bridge in a pod, frames counted on its WebSocket
 
 Sunshine web UI: https://<host>:48990, user admin, password in
 `hack/.rendered/deskpod-sunshine-admin-password`. It answers private
@@ -247,6 +253,118 @@ while others remain; with the shim alone it cannot, since one keyboard
 gone removes the capability. Test tools that bring their own keyboard
 must keep it alive past the app's start (`hack/ptr`'s linger).
 
+## The web bridge
+
+`bridge/` is [moonlight-web-stream](https://github.com/MrCreativ3001/moonlight-web-stream) 3.0.2.
+It pairs with Sunshine as Moonlight does and serves the stream to a browser.
+It runs in the desktop's pod and reaches Sunshine on localhost: no Sunshine port leaves the pod.
+
+The image is upstream's release archive, unmodified: a static binary and its web client on an empty image, 38 MB.
+`bridge/pins` holds the archive's sha256 and the commit upstream's tag must name.
+The build stops when the tag names another commit, or none.
+It is not built from source: nothing is patched, and upstream publishes a digest per release asset.
+
+moonlight-web-stream is GPL-3.0-or-later, so its source goes where the image goes.
+`ghcr.io/epheo/deskube-bridge-source`, under the same tag, holds one archive of 69 MB:
+
+- upstream at the pinned commit;
+- moonlight-common-rust at the commit upstream names, with its submodules: the protocol crate, and the source of the web client's WebAssembly;
+- the Rust crates of both lock files, as `cargo vendor` lays them out, and cargo resolves both offline from them;
+- the npm packages of `package-lock.json`, each checked against its sha512 there.
+
+CI builds both images in one job and pushes the source first: a failed push leaves no bridge without it.
+In the bridge image, `/usr/share/licenses/moonlight-web-stream` holds:
+
+- `LICENSE`, the GPL;
+- `SOURCE`: the commit, the source image's name and how to take the archive out;
+- `third-party/`: the license files of every crate and package in that archive, of Rust's standard library and of musl, and an `INDEX` of their licenses.
+  More than the binary links: sorting out what is linked could miss one.
+  41 crates and 3 packages ship no license file; the index still names their license.
+
+The archive is the source upstream's tag names.
+The binary is upstream's build, and nothing here rebuilds it to compare.
+
+    make bridge bridge-source
+    podman create --name source ghcr.io/epheo/deskube-bridge-source:main none
+    podman cp source:/ . && podman rm source      # the archive
+    hack/bridge-e2e.sh                            # pair, stream, count frames
+    RENDER=none hack/bridge-e2e.sh                # no GPU
+    CUBE=1 SECS=60 CODEC=av1 hack/bridge-e2e.sh   # a moving picture
+    KEEP=1 hack/bridge-e2e.sh                     # leaves the pod, prints its page's address
+
+What it needs from a pod:
+
+- Any UID in group 0, no capability, no privilege escalation. Its root can be read-only.
+- A volume at `/moonlight-web/server`.
+  `data.json` there holds its users, the Sunshine it paired with and the private key of that pairing.
+  Without a volume a restart forgets the pairing; on a read-only root it only logs that it cannot write.
+- One TCP port, 8080 unless `BIND_ADDRESS` names another, for the page, the API and the stream.
+- `FORWARDED_HEADER`: the request header in which its reverse proxy names the signed in user.
+  It believes that header from any caller.
+  The proxy and the desktop beside it both reach the port: a pod's containers share one network, and no NetworkPolicy stands between them.
+  So the proxy is the only gate for everyone else, and nothing else may lead to the port.
+  The proxy must drop any such header a client sent, and set its own.
+- `PATH_PREFIX` when the proxy serves it under a path, and `LOG_LEVEL`.
+
+The image starts the bridge from `/moonlight-web/config.json`, outside the state volume, where the bridge cannot write.
+The environment still wins over it for the four settings above. It changes two of upstream's defaults:
+
+- No admin by first login. Upstream makes the first caller of `/api/login` the admin of a new bridge, header or not.
+  With that off the bridge has no admin: nothing changes its roles through the API.
+- No ICE server. Upstream's default hands the addresses of every WebRTC attempt to Google's STUN servers.
+
+The stream rides the HTTP port as a WebSocket, or WebRTC on one UDP port per stream (`WEBRTC_PORT_RANGE`).
+The page tries WebRTC first and falls back to the WebSocket after 15 s.
+`dataTransport=websocket` in its address skips WebRTC:
+`<prefix>/stream.html?hostId=<host>&appId=<app>&dataTransport=websocket`.
+
+What a launcher calls, under `<prefix>/api`, with the header set:
+
+    GET    /hosts                                              the hosts it knows, and whether each is paired
+    POST   /host   {"address":"127.0.0.1","http_port":47989}   adds Sunshine, answers its host_id
+    POST   /pair   {"host_id":N}                               a line {"Pin":"1234"}, then {"Paired":{...}} or "PairError"
+    GET    /apps?host_id=N                                     an app_id per title
+    POST   /host/cancel   {"host_id":N}                        closes the running app
+    DELETE /host?host_id=N                                     forgets the host and its pairing
+
+The PIN goes to Sunshine's `/api/pin`, as Moonlight's does.
+
+Result 2026-11-28, Ryzen AI Max+ 395, Radeon 8060S, podman 6.2, the desktop image of fff8b21 with Sunshine 2026.1127.
+Both containers ran as an arbitrary UID in group 0 with no capability, the bridge on a read-only root.
+Frames counted on the WebSocket, 1920x1080 at 60 fps asked:
+
+    GPU      H.264   60.0 fps over 60 s   a Vulkan cube turning
+    GPU      HEVC    60.0 fps over 30 s   a Vulkan cube turning
+    GPU      AV1     60.0 fps over 30 s   a Vulkan cube turning
+    no GPU   H.264   60.0 fps over 30 s   a Vulkan cube turning
+    no GPU   H.264   28.1 fps over 30 s   a still desktop
+
+- The bridge took 1.7 % of one CPU with the GPU, 2.2 % without, and 18 MiB of resident memory at most.
+- The pairing survived a restart of the bridge.
+- `/api/login` without the header made no admin, asked from the host and from the desktop container. The image before the config answered 200.
+- The bridge named no ICE server, in its config and to a browser. The image before the config named Google's two.
+- A client that answered the bridge's pings 300 ms late got 7.9 fps and 7 key frames in 15 s: the test fails on more than 3.
+- Headless Chromium 157 played the stream in the bridge's own page, over the WebSocket: its video element counted 1182 frames in 19.6 s.
+  Keys typed in that page opened a terminal on the desktop and ran a command in it.
+- Left to WebRTC first, with no UDP port published, the page showed its first picture 19 s later.
+
+Not run: WebRTC, another browser, a cluster, a gamepad, the clipboard, sound heard by a person, a build from the source archive.
+
+What bit:
+
+- The archive's binary is not executable, and its files belong to the UID that built them.
+- Closing the page leaves the app running, as closing Moonlight does. `POST /host/cancel` closes it.
+- A bridge that kept its pairing beside a Sunshine that lost its own still lists the host as paired.
+  `/apps` then answers 500 and `/pair` answers "PairError". Forget the host, add it and pair again.
+- `POST /host` twice makes two hosts: list them first.
+- Every answer says `Cache-Control: no-store`, the page's 6 MB of scripts included.
+- Without a GPU a still desktop streams at about 28 fps, here and on GitHub's runner alike.
+  Sunshine sets itself a minimum of half the asked rate and repeats a picture that does not change.
+  That rate measures no encoder and no bridge, so CI streams a turning cube.
+- moonlight-common-rust carries moonlight-common-c as a submodule. 3.0.2 does not link it: its `Cargo.lock` has no moonlight-common-sys, and the binary holds none of its symbols.
+  The archive has it all the same.
+- podman gives a read-only root a writable `/tmp` and `/run`. A cluster does not, so the test turns them off.
+
 ## Games
 
 `steam/` sits on base, so there is no desktop behind the game: the app
@@ -269,3 +387,4 @@ alone as the compositor is out: Sunshine cannot capture it.
 ## License
 
 Apache 2.0, see LICENSE.
+The bridge image holds moonlight-web-stream, which is GPL-3.0-or-later; see its section.

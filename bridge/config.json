@@ -1,0 +1,17 @@
+// What the bridge starts from. The environment still wins:
+// BIND_ADDRESS, FORWARDED_HEADER, PATH_PREFIX, LOG_LEVEL.
+// Outside server/, so a state volume cannot replace it.
+{
+  "web_server": {
+    // Upstream makes the first caller of /api/login the admin, header
+    // or not. The desktop beside the bridge reaches its port, and no
+    // NetworkPolicy stands between two containers of one pod.
+    "first_login_create_admin": false,
+    "first_login_assign_global_hosts": false
+  },
+  "webrtc": {
+    // Upstream's default is Google's STUN servers: every WebRTC attempt
+    // would tell a third party the addresses of both ends.
+    "ice_servers": []
+  }
+}

@@ -7,6 +7,9 @@ TAG ?= main
 BASE_IMG ?= $(REGISTRY)/deskube-base:$(TAG)
 DESKTOP_IMG ?= $(REGISTRY)/deskube-desktop:$(TAG)
 STEAM_IMG ?= $(REGISTRY)/deskube-steam:$(TAG)
+BRIDGE_IMG ?= $(REGISTRY)/deskube-bridge:$(TAG)
+# The bridge is GPL: whoever gets its image must be able to get this one.
+BRIDGE_SOURCE_IMG ?= $(REGISTRY)/deskube-bridge-source:$(TAG)
 MOONLIGHT_CLI_IMG ?= moonlight-cli
 # One app alone on the output. Each directory builds deskube-<directory>.
 APPS = brave alacritty evolution bench
@@ -40,6 +43,14 @@ apps: $(APPS) ## Build the single app images on the base image.
 $(APPS): base
 	$(CONTAINER_TOOL) build $(BUILD_FLAGS) -t $(REGISTRY)/deskube-$@:$(TAG) --build-arg BASE=$(BASE_IMG) $@
 
+.PHONY: bridge
+bridge: ## Build the web bridge that streams a desktop to a browser.
+	$(CONTAINER_TOOL) build $(BUILD_FLAGS) -t $(BRIDGE_IMG) --build-arg SOURCE_IMG=$(BRIDGE_SOURCE_IMG) bridge
+
+.PHONY: bridge-source
+bridge-source: ## Build the image that holds the bridge's source in one archive.
+	$(CONTAINER_TOOL) build $(BUILD_FLAGS) -t $(BRIDGE_SOURCE_IMG) --target bridge-source bridge
+
 .PHONY: moonlight-cli
 moonlight-cli: ## Build the headless Moonlight client hack/e2e.sh streams with.
 	$(CONTAINER_TOOL) build $(BUILD_FLAGS) -t $(MOONLIGHT_CLI_IMG) moonlight-cli
@@ -51,8 +62,11 @@ lint: ## Lint the shell scripts, the Containerfiles and the CI workflow.
 	$(LINT) $(ACTIONLINT_IMG)
 
 .PHONY: push
-push: ## Push the base, desktop, Steam and single app images.
+push: ## Push the base, desktop, Steam, single app, bridge and bridge source images.
 	$(CONTAINER_TOOL) push $(BASE_IMG)
 	$(CONTAINER_TOOL) push $(DESKTOP_IMG)
 	$(CONTAINER_TOOL) push $(STEAM_IMG)
+	# The bridge is GPL: its source is out before it, never after.
+	$(CONTAINER_TOOL) push $(BRIDGE_SOURCE_IMG)
+	$(CONTAINER_TOOL) push $(BRIDGE_IMG)
 	for a in $(APPS); do $(CONTAINER_TOOL) push $(REGISTRY)/deskube-$$a:$(TAG) || exit 1; done
